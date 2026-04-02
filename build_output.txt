@@ -1,0 +1,78 @@
+Resolving dependencies...
+Downloading packages...
+  archive 4.0.7 (4.0.9 available)
+  async 2.13.0 (2.13.1 available)
+  characters 1.4.0 (1.4.1 available)
+  dbus 0.7.11 (0.7.12 available)
+  equatable 2.0.7 (2.0.8 available)
+  ffi 2.1.4 (2.2.0 available)
+  fl_chart 0.66.2 (1.2.0 available)
+  flutter_launcher_icons 0.13.1 (0.14.4 available)
+  flutter_lints 2.0.3 (6.0.0 available)
+  flutter_local_notifications 17.2.4 (21.0.0 available)
+  flutter_local_notifications_linux 4.0.1 (8.0.0 available)
+  flutter_local_notifications_platform_interface 7.2.0 (11.0.0 available)
+  image 4.5.4 (4.8.0 available)
+  json_annotation 4.9.0 (4.11.0 available)
+  lints 2.1.1 (6.1.0 available)
+  matcher 0.12.17 (0.12.19 available)
+  material_color_utilities 0.11.1 (0.13.0 available)
+  meta 1.17.0 (1.18.2 available)
+  path_provider_android 2.2.22 (2.2.23 available)
+  path_provider_foundation 2.5.1 (2.6.0 available)
+  petitparser 7.0.1 (7.0.2 available)
+  posix 6.0.3 (6.5.0 available)
+  shared_preferences 2.5.4 (2.5.5 available)
+  shared_preferences_android 2.4.18 (2.4.23 available)
+  shared_preferences_platform_interface 2.4.1 (2.4.2 available)
+  source_span 1.10.1 (1.10.2 available)
+  sqflite_android 2.4.2+2 (2.4.2+3 available)
+  test_api 0.7.7 (0.7.11 available)
+  timezone 0.9.4 (0.11.0 available)
+  uuid 4.5.2 (4.5.3 available)
+  vector_math 2.2.0 (2.3.0 available)
+Got dependencies!
+31 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Running Gradle task 'assembleRelease'...                        
+The message received from the daemon indicates that the daemon has disappeared.
+Build request sent: Build{id=8baf5bb6-8cd5-4fe0-bedd-407bfc9a0bc1, currentDir=C:\Users\HP\Documents\budget app\mpesa_tracker_broken\android}
+Attempting to read last messages from the daemon log...
+Daemon pid: 17000
+  log file: C:\Users\HP\.gradle\daemon\8.14\daemon-17000.out.log
+----- Last 20 lines from daemon log file - daemon-17000.out.log -----
+2026-04-02T19:05:01.314+0300 [DEBUG] [org.gradle.launcher.daemon.server.SynchronizedDispatchConnection] thread 4761: received class org.gradle.launcher.daemon.protocol.Build
+2026-04-02T19:05:01.315+0300 [DEBUG] [org.gradle.launcher.daemon.server.DefaultDaemonConnection] thread 4761: Received non-IO message from client: Build{id=8baf5bb6-8cd5-4fe0-bedd-407bfc9a0bc1, currentDir=C:\Users\HP\Documents\budget app\mpesa_tracker_broken\android}
+2026-04-02T19:05:01.315+0300 [INFO] [org.gradle.launcher.daemon.server.DefaultIncomingConnectionHandler] Received command: Build{id=8baf5bb6-8cd5-4fe0-bedd-407bfc9a0bc1, currentDir=C:\Users\HP\Documents\budget app\mpesa_tracker_broken\android}.
+2026-04-02T19:05:01.316+0300 [DEBUG] [org.gradle.launcher.daemon.server.DefaultIncomingConnectionHandler] Starting executing command: Build{id=8baf5bb6-8cd5-4fe0-bedd-407bfc9a0bc1, currentDir=C:\Users\HP\Documents\budget app\mpesa_tracker_broken\android} with connection: socket connection from /127.0.0.1:50651 to /127.0.0.1:52670.
+2026-04-02T19:05:01.320+0300 [DEBUG] [org.gradle.launcher.daemon.server.DaemonStateCoordinator] Command execution: started DaemonCommandExecution[command = Build{id=8baf5bb6-8cd5-4fe0-bedd-407bfc9a0bc1, currentDir=C:\Users\HP\Documents\budget app\mpesa_tracker_broken\android}, connection = DefaultDaemonConnection: socket connection from /127.0.0.1:50651 to /127.0.0.1:52670] after 6.849166666666666 minutes of idle
+2026-04-02T19:05:01.320+0300 [INFO] [org.gradle.launcher.daemon.server.DaemonRegistryUpdater] Marking the daemon as busy, address: [2d88c624-bcc0-4913-ac29-a09f9eed336a port:50651, addresses:[localhost/127.0.0.1]]
+2026-04-02T19:05:01.321+0300 [DEBUG] [org.gradle.launcher.daemon.registry.PersistentDaemonRegistry] Marking busy by address: [2d88c624-bcc0-4913-ac29-a09f9eed336a port:50651, addresses:[localhost/127.0.0.1]]
+2026-04-02T19:05:01.326+0300 [DEBUG] [org.gradle.cache.internal.DefaultFileLockManager] Waiting to acquire exclusive lock on daemon addresses registry.
+2026-04-02T19:05:01.329+0300 [DEBUG] [org.gradle.cache.internal.DefaultFileLockManager] Lock acquired on daemon addresses registry.
+2026-04-02T19:05:01.333+0300 [DEBUG] [org.gradle.cache.internal.DefaultFileLockManager] Releasing lock on daemon addresses registry.
+2026-04-02T19:05:01.333+0300 [DEBUG] [org.gradle.launcher.daemon.server.DaemonStateCoordinator] resetting idle timer
+2026-04-02T19:05:01.334+0300 [DEBUG] [org.gradle.launcher.daemon.server.DaemonStateCoordinator] daemon is running. Sleeping until state changes.
+2026-04-02T19:05:01.335+0300 [INFO] [org.gradle.launcher.daemon.server.exec.StartBuildOrRespondWithBusy] Daemon is about to start building Build{id=8baf5bb6-8cd5-4fe0-bedd-407bfc9a0bc1, currentDir=C:\Users\HP\Documents\budget app\mpesa_tracker_broken\android}. Dispatching build started information...
+2026-04-02T19:05:01.335+0300 [DEBUG] [org.gradle.launcher.daemon.server.SynchronizedDispatchConnection] thread 4763: dispatching org.gradle.launcher.daemon.protocol.BuildStarted@42c9f1c6
+2026-04-02T19:05:01.341+0300 [DEBUG] [org.gradle.launcher.daemon.server.exec.EstablishBuildEnvironment] Configuring env variables: [PATH, POWERSHELL_EXECUTABLE, SESSIONNAME, ALLUSERSPROFILE, VSCODE_PID, KILO_SERVER_PASSWORD, PROGRAMFILES, PSMODULEPATH, DIRNAME, USERNAME, PWD, CMD_LINE_ARGS, VSCODE_NLS_CONFIG, EXIT_WITH_ERRORLEVEL, EFC_32708_3789132940, FPS_BROWSER_USER_PROFILE_STRING, PATHEXT, KILO_APP_NAME, SNAPSHOT_PATH, HOMEPATH, PROCESSOR_IDENTIFIER, PUBLIC, CACHE_DIR, EXEPATH, KILO_ENABLE_QUESTION_TOOL, SHLVL, ZES_ENABLE_SYSMAN, _SKIP, EFC_32708_1262719628, KILO, FPS_BROWSER_APP_PROFILE_STRING, JAVA_HOME, FLUTTER_TOOLS_DIR, PROMPT, PROGRAMFILES(X86), TERM, ONLINESERVICES, AGENT, MSYSTEM, =C:, APPDATA, JAVA_EXE, KILO_PID, KILO_EDITOR_NAME, DART, VSCODE_CWD, COMPUTERNAME, VSCODE_ESM_ENTRYPOINT, KILO_TELEMETRY_LEVEL, EFC_32708_2283032206, APP_BASE_NAME, FLUTTER_ALREADY_LOCKED, HOMEDRIVE, EFC_32708_1592913036, NUMBER_OF_PROCESSORS, VSCODE_IPC_HOOK, USERDOMAIN_ROAMINGPROFILE, PROCESSOR_LEVEL, SYSTEMDRIVE, PLATFORMCODE, PROCESSOR_ARCHITECTURE, DRIVERDATA, KILO_MACHINE_ID, PROGRAMDATA, CHROME_CRASHPAD_PIPE_NAME, ONEDRIVE, APP_HOME, MINGIT_PATH, KILO_APP_VERSION, VSCODE_CRASH_REPORTER_PROCESS_TYPE, REGIONCODE, KILOCODE_VERSION, SHARED_BIN, VSCODE_CODE_CACHE_PATH, WINDIR, KILO_CLIENT, LOCALAPPDATA, COMMONPROGRAMFILES(X86), USERDOMAIN, VSCODE_HANDLES_UNCAUGHT_ERRORS, DART_SDK_PATH, LOGONSERVER, PLINK_PROTOCOL, FLUTTER_ROOT, ELECTRON_RUN_AS_NODE, PROGRAMW6432, SYSTEMROOT, OS, COMMONPROGRAMW6432, COMMONPROGRAMFILES, COMSPEC, EFC_32708_2775293581, PROCESSOR_REVISION, CLASSPATH, KILOCODE_FEATURE, KILO_PLATFORM, TEMP, KILO_VSCODE_VERSION, USERPROFILE, TMP, HOME]
+2026-04-02T19:05:01.351+0300 [DEBUG] [org.gradle.launcher.daemon.server.exec.LogToClient] About to start relaying all logs to the client via the connection.
+2026-04-02T19:05:01.352+0300 [INFO] [org.gradle.launcher.daemon.server.exec.LogToClient] The client will now receive all logging from the daemon (pid: 17000). The daemon log file: C:\Users\HP\.gradle\daemon\8.14\daemon-17000.out.log
+2026-04-02T19:05:01.364+0300 [INFO] [org.gradle.launcher.daemon.server.exec.LogAndCheckHealth] Starting 36th build in daemon [uptime: 9 hrs 12 mins 25.917 secs, performance: 98%, GC rate: 0.00/s, heap usage: 0% of 8 GiB, non-heap usage: 9% of 4 GiB]
+2026-04-02T19:05:01.366+0300 [DEBUG] [org.gradle.launcher.daemon.server.exec.ExecuteBuild] The daemon has started executing the build.
+2026-04-02T19:05:01.366+0300 [DEBUG] [org.gradle.launcher.daemon.server.exec.ExecuteBuild] Executing build with daemon context: DefaultDaemonContext[uid=2b4d834c-be7a-4ff2-ba29-95d4c9a402e6,javaHome=C:\Program Files\Android\Android Studio\jbr,javaVersion=21,javaVendor=JetBrains s.r.o.,daemonRegistryDir=C:\Users\HP\.gradle\daemon,pid=17000,idleTimeout=10800000,priority=NORMAL,applyInstrumentationAgent=true,nativeServicesMode=ENABLED,daemonOpts=-XX:MaxMetaspaceSize=4G,-XX:ReservedCodeCacheSize=512m,-XX:+HeapDumpOnOutOfMemoryError,-Xmx8G,-Dfile.encoding=UTF-8,-Duser.country=US,-Duser.language=en,-Duser.variant]----- End of the daemon log -----
+
+JVM crash log found: file:///C:/Users/HP/Documents/budget%20app/mpesa_tracker_broken/android/hs_err_pid17000.log
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Gradle build daemon disappeared unexpectedly (it may have been killed or may have crashed)
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+Running Gradle task 'assembleRelease'...                           44.6s
+Gradle task assembleRelease failed with exit code 1
