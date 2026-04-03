@@ -20,7 +20,7 @@ dependencies:
   uuid: ^4.4.0
   permission_handler: ^12.0.1
   collection: ^1.17.1
-  fl_chart: ^0.66.0
+  fl_chart: ^1.2.0
   device_preview: ^1.3.1
   flutter_local_notifications: ^17.1.2
  
@@ -40,6 +40,7 @@ flutter:
   assets:
     - assets/app_icon.png
     - assets/background.jpg
+    - assets/bg_swirl.jpg
 
 flutter_launcher_icons:
   android: true

@@ -53,7 +53,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF08143A),
+              AppColors.mainBackground,
               AppColors.mainBackground,
             ],
           ),
@@ -136,7 +136,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     child: ElevatedButton(
                       onPressed: _saving ? null : _submit,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF8B6900).withValues(alpha: 0.85),
+                        backgroundColor: AppColors.accent.withValues(alpha: 0.85),
                         foregroundColor: AppColors.primaryText,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),

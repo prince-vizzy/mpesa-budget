@@ -22,7 +22,6 @@ class _MainShellState extends State<MainShell> {
   bool _booting = true;
   String? _bootError;
   bool _navVisible = true;
-  double _lastScrollOffset = 0;
 
   final List<Widget> _pages = const [
     HomePage(),
@@ -53,6 +52,10 @@ class _MainShellState extends State<MainShell> {
 
   bool _onScroll(ScrollNotification notification) {
     if (notification is ScrollUpdateNotification) {
+      // Only respond to vertical scrolling, ignore horizontal (e.g. category cards)
+      final metrics = notification.metrics;
+      if (metrics.axis != Axis.vertical) return false;
+
       final delta = notification.scrollDelta ?? 0;
       if (delta > 2 && _navVisible) {
         setState(() => _navVisible = false);
@@ -66,6 +69,7 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.mainBackground,
       extendBody: true,
       body: Container(
         decoration: const BoxDecoration(
@@ -73,7 +77,7 @@ class _MainShellState extends State<MainShell> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFF08143A),
+              AppColors.mainBackground,
               AppColors.mainBackground,
             ],
           ),

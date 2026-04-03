@@ -76,9 +76,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   color: AppColors.componentBase,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
                     Text(
                       tx.description,
                       style: const TextStyle(
@@ -587,11 +587,11 @@ class _DashboardPageState extends State<DashboardPage> {
     return Consumer<CategoryStore>(
       builder: (context, store, child) {
         return Scaffold(
-          backgroundColor: AppColors.mainBackground,
+          backgroundColor: Colors.transparent,
           appBar: PreferredSize(
             preferredSize: const Size.fromHeight(88),
             child: Container(
-              color: const Color(0xFF0A1B4A),
+              color: AppColors.mainBackground,
               child: SafeArea(
                 bottom: false,
                 child: Padding(
@@ -599,7 +599,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   child: Container(
                   height: 62,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0A1B4A),
+                    color: AppColors.mainBackground,
                     borderRadius: BorderRadius.circular(31),
                     boxShadow: const [
                       BoxShadow(
@@ -630,18 +630,7 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
             ),
           ),
-          body: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF0A1B4A),
-                  AppColors.mainBackground,
-                ],
-              ),
-            ),
-            child: SingleChildScrollView(
+          body: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -658,20 +647,22 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                SizedBox(
-                  height: 180,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      ...store.categories.map((category) => CategoryCard(
-                        category: category,
-                        onLongPress: () => _showCategoryOptionsDialog(context, store, category),
-                      )).toList(),
-                      
-                      AddCategoryCard(onTap: () => _showBudgetSelectionDialog(context, store)),
-                    ],
-                  ),
-                ),
+SizedBox(
+  width: double.infinity,
+  height: 180,
+  child: ListView(
+    scrollDirection: Axis.horizontal,
+    padding: const EdgeInsets.only(left: 16, right: 16),
+    children: [
+      ...store.categories.map((category) => CategoryCard(
+        category: category,
+        onLongPress: () => _showCategoryOptionsDialog(context, store, category),
+      )).toList(),
+      
+      AddCategoryCard(onTap: () => _showBudgetSelectionDialog(context, store)),
+    ],
+  ),
+),
 
                 const SizedBox(height: 24),
 
@@ -685,9 +676,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                GlassPanel(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: FutureBuilder<List<Transaction>>(
+GlassPanel(
+  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+  child: FutureBuilder<List<Transaction>>(
                     future: store.getAllCategorizedTransactions(),
                     builder: (context, snapshot) {
                       if (!snapshot.hasData || snapshot.data!.isEmpty) {
@@ -757,7 +748,6 @@ class _DashboardPageState extends State<DashboardPage> {
               ],
               ),
             ),
-          ),
         );
       },
     );
@@ -785,9 +775,9 @@ class CategoryCard extends StatelessWidget {
     final progress =
         totalBudget <= 0 ? 0.0 : (spent / totalBudget).clamp(0.0, 1.0);
 
-    Color progressColor = const Color(0xFFFFC033);
+    Color progressColor = AppColors.accent;
     if (progress > 0.9) {
-      progressColor = const Color(0xFFE59F00);
+      progressColor = AppColors.lightShadow;
     } else if (progress > 0.7) {
       progressColor = AppColors.accent;
     }

@@ -174,7 +174,7 @@ class _HistoryPageState extends State<HistoryPage> {
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(88),
         child: Container(
-          color: const Color(0xFF0A1B4A),
+          color: AppColors.mainBackground,
           child: SafeArea(
             bottom: false,
             child: Padding(
@@ -182,7 +182,7 @@ class _HistoryPageState extends State<HistoryPage> {
               child: Container(
               height: 62,
               decoration: BoxDecoration(
-                color: const Color(0xFF0A1B4A),
+                color: AppColors.mainBackground,
                 borderRadius: BorderRadius.circular(31),
                 boxShadow: const [
                   BoxShadow(
@@ -208,16 +208,16 @@ class _HistoryPageState extends State<HistoryPage> {
         ),
       ),
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF0A1B4A),
-              AppColors.mainBackground,
-            ],
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                AppColors.mainBackground,
+                AppColors.mainBackground,
+              ],
+            ),
           ),
-        ),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -354,17 +354,20 @@ class _HistoryPageState extends State<HistoryPage> {
                           timeRange: _selectedRange,
                           enabledCategories: _enabledCategories,
                           visibleCategories: _visibleCategories,
-                          onToggleCategory: (category, enabled) {
-                            setState(() {
-                              if (enabled) {
-                                _enabledCategories.add(category);
-                                _visibleCategories.add(category);
-                              } else {
-                                _enabledCategories.remove(category);
-                                _visibleCategories.remove(category);
-                              }
-                            });
-                          },
+                           onToggleCategory: (category, enabled) {
+                             setState(() {
+                               if (enabled) {
+                                 // When selecting a category, clear all others first (single select behavior)
+                                 _enabledCategories.clear();
+                                 _visibleCategories.clear();
+                                 _enabledCategories.add(category);
+                                 _visibleCategories.add(category);
+                               } else {
+                                 _enabledCategories.remove(category);
+                                 _visibleCategories.remove(category);
+                               }
+                             });
+                           },
                         );
                       },
                     ),
@@ -461,13 +464,13 @@ class SpendingChart extends StatelessWidget {
   Widget build(BuildContext context) {
     const lineColors = <Color>[
       AppColors.accent,
-      Color(0xFFE59F00),
-      Color(0xFFCC8D00),
-      Color(0xFFB37B00),
-      Color(0xFFFFC033),
-      Color(0xFFD99700),
-      Color(0xFFBF8500),
-      Color(0xFFA67300),
+      AppColors.lightShadow,
+      AppColors.accent,
+      AppColors.lightShadow,
+      AppColors.accent,
+      AppColors.lightShadow,
+      AppColors.accent,
+      AppColors.lightShadow,
     ];
 
     final entries = categorySeries.entries.toList()

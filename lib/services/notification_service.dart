@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../database/database_helper.dart';
 import '../mpesa/mpesa_receiver.dart';
+import '../theme/app_colors.dart';
 import 'mpesa_parser.dart';
 
 class NotificationEvent {
@@ -86,7 +87,7 @@ class NotificationService {
       channelDescription: 'Alerts for new uncategorized M-PESA transactions',
       importance: Importance.high,
       priority: Priority.high,
-      color: Color(0xFF0A1B4A),
+      color: AppColors.mainBackground,
       styleInformation: DefaultStyleInformation(true, true),
     );
     const details = NotificationDetails(android: androidDetails);
