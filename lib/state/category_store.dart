@@ -88,6 +88,11 @@ class CategoryStore with ChangeNotifier {
     await loadCategories();
   }
 
+  Future<void> deleteTransaction(int id) async {
+    await _dbHelper.deleteTransaction(id);
+    await loadCategories();
+  }
+
   /* =========================================================
      TRANSACTIONS
      (categoryName kept for Dashboard compatibility)

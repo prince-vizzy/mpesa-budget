@@ -1,10 +1,11 @@
 import 'dart:async';
-import 'dart:developer' show debugPrint;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../database/database_helper.dart';
+import '../models/transaction.dart';
 import '../mpesa/mpesa_receiver.dart';
 import '../theme/app_colors.dart';
 import 'mpesa_parser.dart';
@@ -34,6 +35,7 @@ class NotificationService {
   static Stream<NotificationEvent> get stream => _events.stream;
 
   static Future<void> initialize() async {
+    debugPrint('NotificationService: Initializing...');
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: androidSettings);
@@ -41,9 +43,14 @@ class NotificationService {
       settings,
       onDidReceiveNotificationResponse: _onNotificationTap,
     );
+    debugPrint('NotificationService: Local notifications initialized');
 
+    debugPrint('NotificationService: Setting up MpesaReceiver listener...');
     _sub?.cancel();
-    _sub = MpesaReceiver.messages.listen((payload) async {
+    _sub = MpesaReceiver.messages.listen(
+      (payload) async {
+        debugPrint('Received M-Pesa message: $payload');
+      debugPrint('Received M-Pesa message: $payload');
       try {
         // Skip if we've processed this exact SMS recently (within 30 seconds)
         // This prevents duplicate notifications if the receiver sends the same SMS multiple times
@@ -51,13 +58,23 @@ class NotificationService {
         final lastNotified = _recentNotifications[payload];
         if (lastNotified != null && now - lastNotified < 30000) {
           // Skip duplicate SMS within 30 seconds
+          debugPrint('Skipping duplicate SMS');
           return;
         }
 
         final result = MpesaParser.parse(payload);
+        debugPrint('Parsed result: $result');
         if (result != null) {
+          final transaction = result.transaction;
+          final namedTransaction = Transaction(
+            description: transaction.description,
+            amount: transaction.amount,
+            date: transaction.date,
+            name: result.recipientName,
+            rawMessage: result.rawMessage,
+          );
           await DatabaseHelper.instance
-              .insertUncategorizedTransaction(result.transaction);
+              .insertUncategorizedTransaction(namedTransaction);
 
           final name = result.recipientName ?? 'New transaction';
           final amount = result.transaction.amount;

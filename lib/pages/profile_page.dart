@@ -28,6 +28,7 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   String _userName = '';
+  final TextEditingController _nameController = TextEditingController();
 
   @override
   void initState() {
@@ -35,10 +36,63 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadUserName();
   }
 
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadUserName() async {
     final name = await DatabaseHelper.instance.getUserSetting('user_name');
     if (mounted && name != null) {
       setState(() => _userName = name);
+      _nameController.text = name;
+    }
+  }
+
+  Future<void> _showEditNameDialog() async {
+    _nameController.text = _userName;
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Your Name'),
+        content: TextField(
+          controller: _nameController,
+          decoration: const InputDecoration(
+            hintText: 'Enter your first name',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final newName = _nameController.text.trim();
+      if (newName.isNotEmpty) {
+        await DatabaseHelper.instance.setUserSetting('user_name', newName);
+        setState(() => _userName = newName);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Name updated successfully'),
+              backgroundColor: AppColors.accent,
+            ),
+          );
+        }
+      }
     }
   }
 

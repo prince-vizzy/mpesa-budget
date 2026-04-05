@@ -7,6 +7,9 @@ class Transaction {
   final int? categoryId;
   final String? categoryName;
   final String status;
+  final String? name;
+  final String? userFirstName;
+  final String? rawMessage;
 
   Transaction({
     this.id,
@@ -16,6 +19,9 @@ class Transaction {
     this.categoryId,
     this.categoryName,
     this.status = 'categorized',
+    this.name,
+    this.userFirstName,
+    this.rawMessage,
   });
 
   Map<String, dynamic> toMap() {
@@ -25,8 +31,11 @@ class Transaction {
       'amount': amount,
       'date': date.millisecondsSinceEpoch,
       'category_id': categoryId,
-      'category_name': categoryName, // Added to match DB
+      'category_name': categoryName,
       'status': status,
+      'name': name,
+      'user_first_name': userFirstName,
+      'raw_message': rawMessage,
     };
   }
 
@@ -34,12 +43,14 @@ class Transaction {
     return Transaction(
       id: map['id'] as int?,
       description: map['description'] ?? '',
-      // Safely convert num to double
       amount: (map['amount'] as num? ?? 0.0).toDouble(),
       date: DateTime.fromMillisecondsSinceEpoch(map['date'] as int? ?? DateTime.now().millisecondsSinceEpoch),
       categoryId: map['category_id'] as int?,
       categoryName: map['category_name'] as String?,
       status: map['status'] as String? ?? 'categorized',
+      name: map['name'] as String?,
+      userFirstName: map['user_first_name'] as String?,
+      rawMessage: map['raw_message'] as String?,
     );
   }
 }

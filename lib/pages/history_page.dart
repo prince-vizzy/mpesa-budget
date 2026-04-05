@@ -411,12 +411,26 @@ class _HistoryPageState extends State<HistoryPage> {
                     final tx = transactions[i];
                     return ListTile(
                       title: Text(
-                        tx.description,
+                        tx.name ?? tx.description,
                         style: const TextStyle(color: AppColors.primaryText),
                       ),
-                      subtitle: Text(
-                        DateFormat('MMM d, y').format(tx.date),
-                        style: const TextStyle(color: AppColors.secondaryText),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            DateFormat('MMM d, y').format(tx.date),
+                            style: const TextStyle(color: AppColors.secondaryText),
+                          ),
+                          if (tx.userFirstName != null && tx.userFirstName!.isNotEmpty)
+                            Text(
+                              'User: ${tx.userFirstName}',
+                              style: const TextStyle(
+                                color: AppColors.secondaryText,
+                                fontSize: 11,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                        ],
                       ),
                       trailing: Text(
                         'Ksh ${tx.amount.toStringAsFixed(2)}',

@@ -22,7 +22,7 @@ class DatabaseHelper {
   static sql.Database? _database;
 
   static const String _databaseName = 'mpesa_tracker.db';
-  static const int _databaseVersion = 5;
+  static const int _databaseVersion = 8;
 
   DatabaseHelper._privateConstructor();
 
@@ -70,7 +70,10 @@ class DatabaseHelper {
         date INTEGER,
         category_id INTEGER,
         category_name TEXT,
-        status TEXT
+        status TEXT,
+        name TEXT,
+        user_first_name TEXT,
+        raw_message TEXT
       )
     ''');
 
@@ -79,7 +82,10 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         description TEXT,
         amount REAL,
-        date INTEGER
+        date INTEGER,
+        name TEXT,
+        user_first_name TEXT,
+        raw_message TEXT
       )
     ''');
 
@@ -134,11 +140,45 @@ class DatabaseHelper {
         ''');
       } catch (_) {}
     }
+    if (oldVersion < 6) {
+      try {
+        await db.execute('ALTER TABLE transactions ADD COLUMN name TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE uncategorized_transactions ADD COLUMN name TEXT');
+      } catch (_) {}
+    }
+    if (oldVersion < 7) {
+      try {
+        await db.execute('ALTER TABLE transactions ADD COLUMN user_first_name TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE uncategorized_transactions ADD COLUMN user_first_name TEXT');
+      } catch (_) {}
+    }
+    if (oldVersion < 8) {
+      try {
+        await db.execute('ALTER TABLE transactions ADD COLUMN raw_message TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE uncategorized_transactions ADD COLUMN raw_message TEXT');
+      } catch (_) {}
+    }
   }
 
   /* =========================================================
      USER SETTINGS
   ========================================================= */
+
+  static const String _userFirstNameKey = 'user_first_name';
+
+  Future<String?> getUserFirstName() async {
+    return await getUserSetting(_userFirstNameKey);
+  }
+
+  Future<void> setUserFirstName(String firstName) async {
+    await setUserSetting(_userFirstNameKey, firstName);
+  }
 
   Future<String?> getUserSetting(String key) async {
     final db = await database;
@@ -229,6 +269,9 @@ class DatabaseHelper {
         'category_id': categoryId,
         'category_name': category['name'],
         'status': 'categorized',
+        'name': row['name'],
+        'user_first_name': row['user_first_name'],
+        'raw_message': row['raw_message'],
       });
       await db.delete(
         'uncategorized_transactions',
@@ -351,6 +394,12 @@ class DatabaseHelper {
     await db.delete('uncategorized_transactions');
   }
 
+  Future<void> deleteTransaction(int id) async {
+    final db = await database;
+    await db.delete('transactions', where: 'id = ?', whereArgs: [id]);
+    await db.delete('uncategorized_transactions', where: 'id = ?', whereArgs: [id]);
+  }
+
   Future<List<Map<String, dynamic>>> getUncategorizedTransactions() async {
     final db = await database;
     return await db.query('uncategorized_transactions');
@@ -372,10 +421,16 @@ class DatabaseHelper {
     );
     if (dupes.isNotEmpty) return;
 
+    // Get user's first name from settings and include it in the transaction
+    final userFirstName = await getUserFirstName();
+
     await db.insert('uncategorized_transactions', {
       'description': transaction.description,
       'amount': transaction.amount,
       'date': transaction.date.millisecondsSinceEpoch,
+      'name': transaction.name,
+      'user_first_name': userFirstName,
+      'raw_message': transaction.rawMessage,
     });
   }
 }

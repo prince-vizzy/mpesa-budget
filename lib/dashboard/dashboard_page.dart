@@ -421,6 +421,45 @@ child: Column(
       },
     );
   }
+
+  Future<void> _showDeleteTransactionDialog(
+    BuildContext context,
+    CategoryStore store,
+    Transaction tx,
+  ) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.mainBackground,
+        title: const Text('Delete Transaction', style: TextStyle(color: AppColors.primaryText)),
+        content: Text(
+          'Delete Ksh ${tx.amount.toStringAsFixed(2)} - ${tx.description}?',
+          style: const TextStyle(color: AppColors.secondaryText),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.secondaryText)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await store.deleteTransaction(tx.id!);
+      setState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Transaction deleted')),
+        );
+      }
+    }
+  }
   
   void _showEditBudgetDialog(BuildContext context, CategoryStore store, Category category) {
     const int DAYS_IN_MONTH = 30;
@@ -703,6 +742,7 @@ GlassPanel(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: ListTile(
+                                onLongPress: () => _showDeleteTransactionDialog(context, store, tx),
                                 leading: Container(
                                   width: 40,
                                   height: 40,
@@ -717,7 +757,7 @@ GlassPanel(
                                   ),
                                 ),
                                 title: Text(
-                                  tx.description,
+                                  tx.name ?? tx.description,
                                   style: const TextStyle(
                                     color: AppColors.primaryText,
                                     fontWeight: FontWeight.w500,
