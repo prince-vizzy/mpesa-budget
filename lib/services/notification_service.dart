@@ -50,7 +50,6 @@ class NotificationService {
     _sub = MpesaReceiver.messages.listen(
       (payload) async {
         debugPrint('Received M-Pesa message: $payload');
-      debugPrint('Received M-Pesa message: $payload');
       try {
         // Skip if we've processed this exact SMS recently (within 30 seconds)
         // This prevents duplicate notifications if the receiver sends the same SMS multiple times
@@ -88,6 +87,7 @@ class NotificationService {
           );
           
           await _showTransactionNotification(name, amount);
+          _events.add(NotificationEvent(payload: 'categorize'));
         }
       } catch (e) {
         // Prevent silent failures that could kill the subscription

@@ -10,6 +10,7 @@ import '../models/category.dart';
 import '../theme/app_colors.dart';
 import '../widgets/premium_ui.dart';
 import '../services/notification_service.dart';
+import '../widgets/magic_card.dart';
 
 // ===================================================
 // DASHBOARD PAGE
@@ -28,18 +29,8 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    _notificationSub = NotificationService.stream.listen((event) async {
-      if (!mounted || _isCategorizeDialogOpen) return;
-      if (event.payload != 'categorize') return;
-
-      final store = context.read<CategoryStore>();
-      await store.loadUncategorizedTransactions();
-      if (!mounted || _isCategorizeDialogOpen) return;
-
-      if (store.uncategorizedTransactions.isNotEmpty) {
-        _showCategorizeDialog(store);
-      }
-    });
+    // Removed duplicate notification listener - handled by MainShell only
+    // _notificationSub = NotificationService.stream.listen(...); 
   }
 
   @override
@@ -76,9 +67,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   color: AppColors.componentBase,
                   borderRadius: BorderRadius.circular(12),
                 ),
-child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
                       tx.description,
                       style: const TextStyle(
@@ -686,108 +677,210 @@ child: Column(
                   ),
                 ),
                 const SizedBox(height: 12),
-SizedBox(
-  width: double.infinity,
-  height: 180,
-  child: ListView(
-    scrollDirection: Axis.horizontal,
-    padding: const EdgeInsets.only(left: 16, right: 16),
-    children: [
-      ...store.categories.map((category) => CategoryCard(
-        category: category,
-        onLongPress: () => _showCategoryOptionsDialog(context, store, category),
-      )).toList(),
-      
-      AddCategoryCard(onTap: () => _showBudgetSelectionDialog(context, store)),
-    ],
-  ),
-),
+                SizedBox(
+                  width: double.infinity,
+                  height: 200,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.only(left: 16, right: 16),
+                    itemCount: store.categories.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == store.categories.length) {
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: SizedBox(
+                            width: 160,
+                            child: GestureDetector(
+                              onTap: () => _showBudgetSelectionDialog(context, store),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.componentBase,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: AppColors.accent.withOpacity(0.3),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.add_circle_outline,
+                                    color: AppColors.accent,
+                                    size: 48,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      final category = store.categories[index];
+                      final spent = category.spent;
+                      final totalBudget = category.budget;
+                      final usage = totalBudget > 0 ? spent / totalBudget : 0.0;
+                      
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: SizedBox(
+                          width: 140,
+                          height: 80,
+                          child: GestureDetector(
+                            onTap: () => _showCategoryOptionsDialog(context, store, category),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.componentBase,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    category.name,
+                                    style: const TextStyle(
+                                      color: AppColors.primaryText,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    category.isMonthly 
+                                        ? 'Ksh ${category.monthlyBudget.toStringAsFixed(0)} Monthly'
+                                        : 'Ksh ${category.dailyBudget.toStringAsFixed(0)} Daily',
+                                    style: TextStyle(
+                                      color: AppColors.secondaryText,
+                                      fontSize: 11,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
 
-                const SizedBox(height: 24),
-
-                // LATEST TRANSACTIONS
+                // RECENT TRANSACTIONS SECTION
+                const SizedBox(height: 32),
                 const Text(
-                  'Latest Transactions',
+                  'Recent Transactions',
                   style: TextStyle(
-                    fontSize: 18, 
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: AppColors.primaryText,
                   ),
                 ),
                 const SizedBox(height: 12),
-GlassPanel(
-  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-  child: FutureBuilder<List<Transaction>>(
-                    future: store.getAllCategorizedTransactions(),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                        return Container(
-                          padding: const EdgeInsets.all(20),
-                          child: const Center(
-                            child: Text(
-                              'No transactions yet.',
-                              style: TextStyle(color: AppColors.secondaryText),
+                FutureBuilder<List<Transaction>>(
+                  future: store.getAllCategorizedTransactions(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    
+                    if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+                      return Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: AppColors.componentBase,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.receipt_long,
+                              size: 48,
+                              color: AppColors.secondaryText,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No recent transactions',
+                              style: TextStyle(
+                                color: AppColors.secondaryText,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Your transactions will appear here',
+                              style: TextStyle(
+                                color: AppColors.secondaryText.withOpacity(0.7),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    
+                    final transactions = snapshot.data!;
+                    final recentTransactions = transactions.take(5).toList();
+                    
+                    return Column(
+                      children: recentTransactions.map((transaction) {
+                        final isReceived = transaction.amount > 0;
+                        final dateFormat = DateFormat('MMM dd, HH:mm');
+                        final displayName = transaction.userFirstName ?? transaction.name ?? '';
+                        
+                        return GestureDetector(
+                          onLongPress: () => _showDeleteTransactionDialog(context, store, transaction),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.componentBase,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (displayName.isNotEmpty)
+                                        Text(
+                                          displayName,
+                                          style: const TextStyle(
+                                            color: AppColors.primaryText,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      Text(
+                                        dateFormat.format(transaction.date),
+                                        style: TextStyle(
+                                          color: AppColors.secondaryText,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  'Ksh ${transaction.amount.abs().toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: Colors.yellow,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         );
-                      }
-
-                      return Column(
-                        children: snapshot.data!.take(5).map((tx) {
-                          return Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            child: Card(
-                              color: AppColors.componentBase,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: ListTile(
-                                onLongPress: () => _showDeleteTransactionDialog(context, store, tx),
-                                leading: Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accent.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Icon(
-                                    Icons.receipt_long,
-                                    color: AppColors.accent,
-                                    size: 20,
-                                  ),
-                                ),
-                                title: Text(
-                                  tx.name ?? tx.description,
-                                  style: const TextStyle(
-                                    color: AppColors.primaryText,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  '${tx.categoryName ?? 'Uncategorized'} • '
-                                  '${DateFormat('MMM d, y').format(tx.date)}',
-                                  style: const TextStyle(color: AppColors.secondaryText),
-                                ),
-                                trailing: Text(
-                                  'Ksh ${tx.amount.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.accent,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      );
-                    },
-                  ),
+                      }).toList(),
+                    );
+                  },
                 ),
-                const SizedBox(height: 20),
               ],
-              ),
             ),
+          ),
         );
       },
     );

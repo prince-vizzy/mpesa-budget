@@ -1,7 +1,6 @@
-// lib/navigation/main_shell.dart
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 
 import '../pages/home_page.dart';
 import '../pages/history_page.dart';
@@ -9,6 +8,7 @@ import '../pages/profile_page.dart';
 import '../state/category_store.dart';
 import '../theme/app_colors.dart';
 import '../widgets/frequency_loader.dart';
+import '../services/notification_service.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -22,6 +22,8 @@ class _MainShellState extends State<MainShell> {
   bool _booting = true;
   String? _bootError;
   bool _navVisible = true;
+  bool _isCategorizeDialogOpen = false;
+  StreamSubscription<NotificationEvent>? _notificationSub;
 
   final List<Widget> _pages = const [
     HomePage(),
@@ -48,6 +50,144 @@ class _MainShellState extends State<MainShell> {
         });
       }
     });
+    
+    // Set up notification listener at the MainShell level
+    _setupNotificationListener();
+  }
+
+  void _setupNotificationListener() {
+    _notificationSub = NotificationService.stream.listen((event) async {
+      if (!mounted || _isCategorizeDialogOpen) return;
+      if (event.payload != 'categorize') return;
+
+      final store = context.read<CategoryStore>();
+      await store.loadUncategorizedTransactions();
+      if (!mounted || _isCategorizeDialogOpen) return;
+
+      if (store.uncategorizedTransactions.isNotEmpty) {
+        _showCategorizeDialog(store);
+      }
+    }, onError: (error) {
+      debugPrint('Notification listener error: $error');
+    });
+  }
+
+  void _showCategorizeDialog(CategoryStore store) {
+    if (store.uncategorizedTransactions.isEmpty || _isCategorizeDialogOpen) {
+      return;
+    }
+    _isCategorizeDialogOpen = true;
+
+    final tx = store.uncategorizedTransactions.first;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return AlertDialog(
+          backgroundColor: AppColors.mainBackground,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'Categorize Transaction',
+            style: TextStyle(color: AppColors.primaryText),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.componentBase,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tx.description,
+                      style: const TextStyle(
+                        color: AppColors.primaryText,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Ksh ${tx.amount.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            color: AppColors.accent,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 200),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: store.categories.map((cat) {
+                      return Card(
+                        color: AppColors.componentBase,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: ListTile(
+                          title: Text(
+                            cat.name,
+                            style: const TextStyle(color: AppColors.primaryText),
+                          ),
+                          onTap: () async {
+                            if (tx.id != null && cat.id != null) {
+                              await store.categorizeTransaction(
+                                transactionId: tx.id!,
+                                categoryId: cat.id!,
+                                categoryName: cat.name,
+                              );
+                              if (!mounted) return;
+                              await store.loadUncategorizedTransactions();
+                            }
+                            if (mounted) {
+                              Navigator.of(context).pop();
+                              _isCategorizeDialogOpen = false;
+                              if (store.uncategorizedTransactions.isNotEmpty) {
+                                _showCategorizeDialog(store);
+                              }
+                            }
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                if (mounted) {
+                  Navigator.of(context).pop();
+                  _isCategorizeDialogOpen = false;
+                }
+              },
+              child: const Text('Later',
+                  style: TextStyle(color: AppColors.secondaryText)),
+            ),
+          ],
+        );
+      },
+    ).then((_) {
+      _isCategorizeDialogOpen = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    _notificationSub?.cancel();
+    super.dispose();
   }
 
   bool _onScroll(ScrollNotification notification) {
