@@ -57,19 +57,30 @@ class _MainShellState extends State<MainShell> {
 
   void _setupNotificationListener() {
     _notificationSub = NotificationService.stream.listen((event) async {
-      if (!mounted || _isCategorizeDialogOpen) return;
       if (event.payload != 'categorize') return;
-
-      final store = context.read<CategoryStore>();
-      await store.loadUncategorizedTransactions();
-      if (!mounted || _isCategorizeDialogOpen) return;
-
-      if (store.uncategorizedTransactions.isNotEmpty) {
-        _showCategorizeDialog(store);
-      }
+      await _offerToCategorize();
     }, onError: (error) {
       debugPrint('Notification listener error: $error');
     });
+
+    // A cold start from a notification tap, or a queue drained during startup,
+    // raises its event before this listener exists. Collect it now.
+    final pending = NotificationService.takePendingEvent();
+    if (pending?.payload == 'categorize') {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _offerToCategorize());
+    }
+  }
+
+  Future<void> _offerToCategorize() async {
+    if (!mounted || _isCategorizeDialogOpen) return;
+
+    final store = context.read<CategoryStore>();
+    await store.loadUncategorizedTransactions();
+    if (!mounted || _isCategorizeDialogOpen) return;
+
+    if (store.uncategorizedTransactions.isNotEmpty) {
+      _showCategorizeDialog(store);
+    }
   }
 
   void _showCategorizeDialog(CategoryStore store) {

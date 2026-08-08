@@ -22,3 +22,9 @@ ios/Flutter/ephemeral/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local reference copy of the native Android prototype (not part of this app)
+native/
+
+# Accidental Windows redirect artifact
+nul

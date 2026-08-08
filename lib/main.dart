@@ -63,14 +63,30 @@ class AppGate extends StatefulWidget {
   State<AppGate> createState() => _AppGateState();
 }
 
-class _AppGateState extends State<AppGate> {
+class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
   bool _checking = true;
   bool _isNewUser = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkUser();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Pick up anything the native listener captured while we were away, and
+    // surface anything the background isolate already stored.
+    if (state == AppLifecycleState.resumed) {
+      NotificationService.onResumed();
+    }
   }
 
   Future<void> _checkUser() async {
