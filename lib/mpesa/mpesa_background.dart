@@ -30,5 +30,14 @@ Future<void> _drain() async {
     await NotificationService.drainAndProcess();
   } catch (e, stack) {
     debugPrint('mpesaBackgroundEntry error: $e\n$stack');
+  } finally {
+    // Native is holding a wake lock for this pass so the CPU can't doze
+    // mid-processing — release it now that we are actually done, rather than
+    // relying on its safety timeout every single time.
+    try {
+      await _backgroundChannel.invokeMethod('processingComplete');
+    } catch (e) {
+      debugPrint('mpesaBackgroundEntry processingComplete error: $e');
+    }
   }
 }

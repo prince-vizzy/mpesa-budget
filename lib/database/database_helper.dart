@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart' as sql;
 import 'package:path/path.dart';
 
@@ -17,12 +18,41 @@ class SpendRollup {
   });
 }
 
+/// What happened to a transaction the M-Pesa listeners handed over.
+class TransactionIntake {
+  /// True when a saved recipient rule filed it automatically.
+  final bool wasAutoCategorized;
+
+  /// The category it was filed under, when [wasAutoCategorized].
+  final String? categoryName;
+
+  /// True when we had already stored this transaction and did nothing.
+  final bool wasDuplicate;
+
+  const TransactionIntake._({
+    this.wasAutoCategorized = false,
+    this.categoryName,
+    this.wasDuplicate = false,
+  });
+
+  /// Stored, and waiting for the user to pick a category.
+  factory TransactionIntake.queued() => const TransactionIntake._();
+
+  /// Stored and categorised by a saved rule.
+  factory TransactionIntake.categorized(String? categoryName) =>
+      TransactionIntake._(wasAutoCategorized: true, categoryName: categoryName);
+
+  /// Already known; nothing was written.
+  factory TransactionIntake.duplicate() =>
+      const TransactionIntake._(wasDuplicate: true);
+}
+
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
   static sql.Database? _database;
 
   static const String _databaseName = 'mpesa_tracker.db';
-  static const int _databaseVersion = 8;
+  static const int _databaseVersion = 9;
 
   DatabaseHelper._privateConstructor();
 
@@ -34,6 +64,19 @@ class DatabaseHelper {
     if (_database != null) return _database!;
     _database = await _initDatabase();
     return _database!;
+  }
+
+  /// Test hook: drops any open connection and reopens against [path], so a test
+  /// can run the real schema and migrations against an in-memory database.
+  @visibleForTesting
+  static Future<void> resetForTesting(String path) async {
+    await _database?.close();
+    _database = await sql.openDatabase(
+      path,
+      version: _databaseVersion,
+      onCreate: instance._onCreate,
+      onUpgrade: instance._onUpgrade,
+    );
   }
 
   Future<sql.Database> _initDatabase() async {
@@ -164,6 +207,96 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE uncategorized_transactions ADD COLUMN raw_message TEXT');
       } catch (_) {}
     }
+    if (oldVersion < 9) {
+      // recipient_category was only ever created in _onCreate, so every install
+      // that arrived here by upgrading is missing it.
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS recipient_category (
+            recipient TEXT PRIMARY KEY,
+            category_id INTEGER,
+            category_name TEXT
+          )
+        ''');
+      } catch (_) {}
+    }
+  }
+
+  /* =========================================================
+     RECIPIENT RULES (auto-categorising repeat payments)
+  ========================================================= */
+
+  /// Lookup key for a payee.
+  ///
+  /// Recipient names come out of regexes over message text, so the same payee
+  /// turns up as "Naivas Limited", "NAIVAS LIMITED." and "NAIVAS  LIMITED"
+  /// depending on the wording. Matching on a normalised form means one rule
+  /// covers all of them.
+  static String? normalizeRecipient(String? recipient) {
+    if (recipient == null) return null;
+    final key = recipient
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9 ]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return key.isEmpty ? null : key;
+  }
+
+  /// The saved rule for a payee, or null if this is a payee we have not been
+  /// told about yet.
+  Future<Map<String, dynamic>?> getRecipientCategory(String? recipient) async {
+    final key = normalizeRecipient(recipient);
+    if (key == null) return null;
+
+    final db = await database;
+    final rows = await db.query(
+      'recipient_category',
+      where: 'recipient = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    return rows.isNotEmpty ? rows.first : null;
+  }
+
+  /// Records that payments to [recipient] belong in [categoryId], so the next
+  /// one files itself.
+  Future<void> rememberRecipientCategory({
+    required String? recipient,
+    required int categoryId,
+    String? categoryName,
+  }) async {
+    final key = normalizeRecipient(recipient);
+    // Transactions the parser could not name have nothing to key a rule on.
+    if (key == null) return;
+
+    final db = await database;
+    await db.insert(
+      'recipient_category',
+      {
+        'recipient': key,
+        'category_id': categoryId,
+        'category_name': categoryName,
+      },
+      conflictAlgorithm: sql.ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> forgetRecipientCategory(String? recipient) async {
+    final key = normalizeRecipient(recipient);
+    if (key == null) return;
+
+    final db = await database;
+    await db.delete(
+      'recipient_category',
+      where: 'recipient = ?',
+      whereArgs: [key],
+    );
+  }
+
+  /// Every saved rule, for the management list in settings.
+  Future<List<Map<String, dynamic>>> getRecipientCategories() async {
+    final db = await database;
+    return db.query('recipient_category', orderBy: 'recipient ASC');
   }
 
   /* =========================================================
@@ -239,9 +372,16 @@ class DatabaseHelper {
      TRANSACTIONS
   ========================================================= */
 
+  /// Files a transaction under a category.
+  ///
+  /// By default this also records a rule, so the next payment to the same payee
+  /// is categorised on arrival rather than queued for the user again. Pass
+  /// [rememberRecipient] as false for a one-off correction that should not
+  /// change how future payments are treated.
   Future<void> categorizeTransaction({
     required int transactionId,
     required int categoryId,
+    bool rememberRecipient = true,
   }) async {
     final db = await database;
 
@@ -251,6 +391,7 @@ class DatabaseHelper {
       whereArgs: [categoryId],
     ))
         .first;
+    final categoryName = category['name'] as String?;
 
     // If this id belongs to uncategorized_transactions, move it into
     // transactions as categorized, then remove from uncategorized queue.
@@ -267,7 +408,7 @@ class DatabaseHelper {
         'amount': row['amount'],
         'date': row['date'],
         'category_id': categoryId,
-        'category_name': category['name'],
+        'category_name': categoryName,
         'status': 'categorized',
         'name': row['name'],
         'user_first_name': row['user_first_name'],
@@ -278,6 +419,14 @@ class DatabaseHelper {
         where: 'id = ?',
         whereArgs: [transactionId],
       );
+
+      if (rememberRecipient) {
+        await rememberRecipientCategory(
+          recipient: row['name'] as String?,
+          categoryId: categoryId,
+          categoryName: categoryName,
+        );
+      }
       return;
     }
 
@@ -285,12 +434,31 @@ class DatabaseHelper {
       'transactions',
       {
         'category_id': categoryId,
-        'category_name': category['name'],
+        'category_name': categoryName,
         'status': 'categorized',
       },
       where: 'id = ?',
       whereArgs: [transactionId],
     );
+
+    // Re-categorising an existing transaction is also how a wrong rule gets
+    // corrected, so the rule has to follow the change.
+    if (rememberRecipient) {
+      final rows = await db.query(
+        'transactions',
+        columns: ['name'],
+        where: 'id = ?',
+        whereArgs: [transactionId],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        await rememberRecipientCategory(
+          recipient: rows.first['name'] as String?,
+          categoryId: categoryId,
+          categoryName: categoryName,
+        );
+      }
+    }
   }
 
   Future<List<Transaction>> getAllCategorizedTransactions() async {
@@ -405,32 +573,58 @@ class DatabaseHelper {
     return await db.query('uncategorized_transactions');
   }
 
-  Future<void> insertUncategorizedTransaction(Transaction transaction) async {
+  /// Stores a freshly parsed transaction, applying a saved recipient rule when
+  /// there is one.
+  ///
+  /// This is the intake point for everything the M-Pesa listeners capture.
+  Future<TransactionIntake> insertParsedTransaction(Transaction transaction) async {
     final db = await database;
 
-    // Avoid duplicate inserts from repeated notification callbacks.
-    final dupes = await db.query(
-      'uncategorized_transactions',
-      where: 'description = ? AND amount = ? AND date >= ?',
-      whereArgs: [
-        transaction.description,
-        transaction.amount,
-        transaction.date.subtract(const Duration(minutes: 2)).millisecondsSinceEpoch,
-      ],
-      limit: 1,
-    );
-    if (dupes.isNotEmpty) return;
+    final since = transaction.date
+        .subtract(const Duration(minutes: 2))
+        .millisecondsSinceEpoch;
+
+    // Avoid duplicate inserts from repeated notification callbacks. The earlier
+    // copy may be in either table, depending on whether a rule matched then.
+    for (final table in const ['uncategorized_transactions', 'transactions']) {
+      final dupes = await db.query(
+        table,
+        where: 'description = ? AND amount = ? AND date >= ?',
+        whereArgs: [transaction.description, transaction.amount, since],
+        limit: 1,
+      );
+      if (dupes.isNotEmpty) return TransactionIntake.duplicate();
+    }
 
     // Get user's first name from settings and include it in the transaction
     final userFirstName = await getUserFirstName();
+    final rule = await getRecipientCategory(transaction.name);
 
-    await db.insert('uncategorized_transactions', {
+    if (rule == null) {
+      await db.insert('uncategorized_transactions', {
+        'description': transaction.description,
+        'amount': transaction.amount,
+        'date': transaction.date.millisecondsSinceEpoch,
+        'name': transaction.name,
+        'user_first_name': userFirstName,
+        'raw_message': transaction.rawMessage,
+      });
+      return TransactionIntake.queued();
+    }
+
+    final categoryName = rule['category_name'] as String?;
+    await db.insert('transactions', {
       'description': transaction.description,
       'amount': transaction.amount,
       'date': transaction.date.millisecondsSinceEpoch,
+      'category_id': rule['category_id'],
+      'category_name': categoryName,
+      'status': 'categorized',
       'name': transaction.name,
       'user_first_name': userFirstName,
       'raw_message': transaction.rawMessage,
     });
+    return TransactionIntake.categorized(categoryName);
   }
+
 }

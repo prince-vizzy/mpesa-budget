@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/category.dart';
 import '../models/transaction.dart';
+import '../services/dashboard_sync_service.dart';
 
 class CategoryStore with ChangeNotifier {
   final DatabaseHelper _dbHelper = DatabaseHelper.instance;
@@ -31,6 +32,7 @@ class CategoryStore with ChangeNotifier {
       loadCategories(),
       loadUncategorizedTransactions(),
     ]);
+    await _syncDashboard();
   }
 
   Future<void> loadCategories() async {
@@ -76,21 +78,25 @@ class CategoryStore with ChangeNotifier {
   Future<void> addCategory(Category category) async {
     await _dbHelper.insertCategory(category);
     await loadCategories();
+    await _syncDashboard();
   }
 
   Future<void> updateCategory(Category category) async {
     await _dbHelper.updateCategory(category);
     await loadCategories();
+    await _syncDashboard();
   }
 
   Future<void> deleteCategory(int id) async {
     await _dbHelper.deleteCategory(id);
     await loadCategories();
+    await _syncDashboard();
   }
 
   Future<void> deleteTransaction(int id) async {
     await _dbHelper.deleteTransaction(id);
     await loadCategories();
+    await _syncDashboard();
   }
 
   /* =========================================================
@@ -102,13 +108,32 @@ class CategoryStore with ChangeNotifier {
     required int transactionId,
     required int categoryId,
     String? categoryName, // 👈 REQUIRED BY DASHBOARD
+    // Pass false for a one-off correction that should not change how future
+    // payments to this payee are treated.
+    bool rememberRecipient = true,
   }) async {
     await _dbHelper.categorizeTransaction(
       transactionId: transactionId,
       categoryId: categoryId,
+      rememberRecipient: rememberRecipient,
     );
 
     await loadAllData();
+  }
+
+  /* =========================================================
+     RECIPIENT RULES (auto-categorising repeat payments)
+  ========================================================= */
+
+  /// Every saved payee rule, for the management list in settings.
+  Future<List<Map<String, dynamic>>> getRecipientRules() =>
+      _dbHelper.getRecipientCategories();
+
+  /// Stops auto-categorising payments to this payee. Transactions already filed
+  /// keep their category; only future ones go back to the queue.
+  Future<void> forgetRecipientRule(String recipient) async {
+    await _dbHelper.forgetRecipientCategory(recipient);
+    notifyListeners();
   }
 
   Future<List<Transaction>> getAllCategorizedTransactions() async {
@@ -167,6 +192,18 @@ class CategoryStore with ChangeNotifier {
     }
 
     return series;
+  }
+
+  Future<void> _syncDashboard() async {
+    try {
+      final transactions = await getAllCategorizedTransactions();
+      await DashboardSyncService.sync(
+        categories: _categories,
+        transactions: transactions,
+      );
+    } catch (_) {
+      // Dashboard sync is best-effort; local app data remains authoritative.
+    }
   }
 
   /* =========================================================

@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../database/database_helper.dart';
 import '../models/transaction.dart';
@@ -97,7 +98,11 @@ class NotificationService {
       cancelOnError: false,
     );
 
-    // Pick up anything captured while the app was closed.
+    // Pick up anything captured while the app was closed. The sweep runs first
+    // so a message that never reached any live listener — delivered while the
+    // process was dead, or in a muted conversation — is queued in time for this
+    // same drain.
+    await MpesaReceiver.backfillFromSms();
     await drainAndProcess();
 
     // If the app was cold-started by tapping a transaction notification, the tap
@@ -121,18 +126,25 @@ class NotificationService {
   /// (it may have been stored by the background isolate, in another isolate's
   /// event stream that this one never saw).
   static Future<void> onResumed() async {
+    await MpesaReceiver.backfillFromSms();
     await drainAndProcess();
     _emit(NotificationEvent(payload: 'categorize'));
   }
 
   /// Takes every message the native listener has queued and processes it.
   /// Called on launch, on resume, and whenever the native side signals.
+  ///
+  /// Each message is only acknowledged (removed from the native queue) after
+  /// it has actually been parsed and stored. If this isolate is killed
+  /// partway through, whatever has not yet been acknowledged is still on
+  /// disk natively and gets picked up again next time, instead of vanishing.
   static Future<void> drainAndProcess() async {
     final pending = await MpesaReceiver.drainPending();
     if (pending.isEmpty) return;
     debugPrint('NotificationService: draining ${pending.length} queued message(s)');
     for (final payload in pending) {
       await _processPayload(payload);
+      await MpesaReceiver.acknowledgeProcessed(payload);
     }
   }
 
@@ -182,8 +194,11 @@ class NotificationService {
           name: result.recipientName,
           rawMessage: result.rawMessage,
         );
-        await DatabaseHelper.instance
-            .insertUncategorizedTransaction(namedTransaction);
+        // A saved rule for this payee files the transaction on arrival instead
+        // of queueing it for the user again.
+        final intake = await DatabaseHelper.instance
+            .insertParsedTransaction(namedTransaction);
+        if (intake.wasDuplicate) return;
 
         final name = result.recipientName ?? 'New transaction';
         final amount = result.transaction.amount;
@@ -198,8 +213,17 @@ class NotificationService {
           _recentMessageHashes.clear();
         }
 
-        await _showTransactionNotification(name, amount);
-        _emit(NotificationEvent(payload: 'categorize'));
+        await _showTransactionNotification(
+          name,
+          amount,
+          categoryName: intake.categoryName,
+        );
+
+        // Nothing to ask about when a rule already handled it — the UI just
+        // needs to pick up the new spending.
+        _emit(NotificationEvent(
+          payload: intake.wasAutoCategorized ? 'refresh' : 'categorize',
+        ));
       } catch (dbError) {
         debugPrint('Error processing parsed transaction: $dbError');
       }
@@ -210,7 +234,7 @@ class NotificationService {
   }
 
   static Future<void> _showTransactionNotification(
-      String name, double amount) async {
+      String name, double amount, {String? categoryName}) async {
     const androidDetails = AndroidNotificationDetails(
       'uncategorized_transactions',
       'Uncategorized Transactions',
@@ -222,12 +246,17 @@ class NotificationService {
     );
     const details = NotificationDetails(android: androidDetails);
 
+    final autoCategorized = categoryName != null && categoryName.isNotEmpty;
+
     await _localNotifications.show(
       0, // Use fixed ID to replace previous notification
       name,
-      'Ksh ${amount.toStringAsFixed(0)} — tap to categorize',
+      autoCategorized
+          ? 'Ksh ${amount.toStringAsFixed(0)} — filed under $categoryName'
+          : 'Ksh ${amount.toStringAsFixed(0)} — tap to categorize',
       details,
-      payload: 'categorize',
+      // Only the uncategorized case has anything to open on tap.
+      payload: autoCategorized ? 'refresh' : 'categorize',
     );
   }
 
@@ -243,5 +272,48 @@ class NotificationService {
 
   static Future<void> openListenerSettings() async {
     await MpesaReceiver.openListenerSettings();
+  }
+
+  static Future<bool> isIgnoringBatteryOptimizations() async {
+    return MpesaReceiver.isIgnoringBatteryOptimizations();
+  }
+
+  static Future<void> requestIgnoreBatteryOptimizations() async {
+    await MpesaReceiver.requestIgnoreBatteryOptimizations();
+  }
+
+  /// Whether SMS capture — the only path that does not depend on a notification
+  /// being posted — is available.
+  static Future<bool> isSmsCaptureEnabled() async {
+    return MpesaReceiver.hasSmsPermission();
+  }
+
+  /// Asks for the SMS permissions, then immediately sweeps the inbox so the
+  /// transactions missed before the grant show up straight away.
+  ///
+  /// Returns whether capture is now active.
+  static Future<bool> requestSmsCapture() async {
+    try {
+      final statuses = await [Permission.sms].request();
+      final granted = statuses[Permission.sms]?.isGranted ?? false;
+      if (!granted) return false;
+    } catch (e) {
+      debugPrint('NotificationService requestSmsCapture error: $e');
+      return false;
+    }
+
+    await MpesaReceiver.backfillFromSms();
+    await drainAndProcess();
+    return true;
+  }
+
+  /// Imports every M-Pesa message in the inbox back to [since], for a user who
+  /// wants history rather than just what arrives from now on.
+  ///
+  /// Returns how many new messages were queued.
+  static Future<int> importSmsHistory(DateTime since) async {
+    final queued = await MpesaReceiver.backfillFromSms(since: since);
+    await drainAndProcess();
+    return queued;
   }
 }

@@ -10,6 +10,44 @@ class MpesaParseResult {
 }
 
 class MpesaParser {
+  /// Words a name regex tends to swallow because the capture only stops at a
+  /// digit or sentence end: "sent to JAMII TELECOM LTD for account 12345" would
+  /// otherwise yield "JAMII TELECOM LTD for account".
+  static final RegExp _trailingFiller = RegExp(
+    r'\s+(?:for(?:\s+account)?|on|at|via|to|acc|a/c|account|ref)\s*$',
+    caseSensitive: false,
+  );
+
+  /// Tidies a captured recipient without discarding any of it.
+  ///
+  /// The name is what the history list and the transaction notification show, so
+  /// keeping it whole matters: truncating to the first word made every "JOHN DOE"
+  /// and "JOHN SMITH" read identically.
+  static String? _cleanRecipient(String? raw) {
+    if (raw == null) return null;
+
+    var name = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    // Several messages put the balance straight after the name with no full stop
+    // ("... - EQUITY AGENT New M-PESA balance is Ksh300.00"), so a capture that
+    // only stops at a sentence end swallows it.
+    name = name.split(RegExp(
+      r'\s+(?:New\s+M-PESA|Transaction\s+cost|New\s+balance)\b',
+      caseSensitive: false,
+    )).first;
+
+    // Strip trailing punctuation, then any filler the strip exposes, repeatedly:
+    // "... LTD for account" -> "... LTD for" -> "... LTD".
+    var previous = '';
+    while (name != previous) {
+      previous = name;
+      name = name.replaceAll(RegExp(r'[^\w\s]+$'), '').trim();
+      name = name.replaceAll(_trailingFiller, '').trim();
+    }
+
+    return name.isEmpty ? null : name;
+  }
+
   static MpesaParseResult? parse(String text) {
     try {
       debugPrint('Parsing M-Pesa text: $text');
@@ -61,11 +99,9 @@ class MpesaParser {
     phoneNumber = bankTransferMatch.group(1);
     recipientName = bankTransferMatch.group(2)!.trim();
     // Trim trailing punctuation and "successfully processed", then first name only
-    recipientName = recipientName.replaceAll(RegExp(r'\s*(?:successfully|processed|confirmed).*', caseSensitive: false), '').trim();
-    if (recipientName!.contains(' ')) {
-      recipientName = recipientName.split(' ')[0];
-    }
-    debugPrint('Cleaned bank name to first: "$recipientName"');
+    recipientName = _cleanRecipient(recipientName.replaceAll(
+        RegExp(r'\s*(?:successfully|processed|confirmed).*', caseSensitive: false), ''));
+    debugPrint('Cleaned bank name: "$recipientName"');
     debugPrint('Found bank transfer with name: name="$recipientName" phone=$phoneNumber');
   }
 
@@ -99,13 +135,34 @@ class MpesaParser {
             RegExp(r'(?:sent|paid|transfer)\s+to\s+([A-Z][^.!,\d]+)', caseSensitive: false)
                 .firstMatch(text);
         if (sentMatch != null) {
-          recipientName = sentMatch.group(1)!.trim();
-          // Trim trailing punctuation, first name only
-          recipientName = recipientName.replaceAll(RegExp(r'[^\w\s]$'), '').trim();
-          if (recipientName.contains(' ')) {
-            recipientName = recipientName.split(' ')[0];
-          }
+          recipientName = _cleanRecipient(sentMatch.group(1));
           debugPrint('Found recipient name (sent): $recipientName');
+        }
+      }
+
+      // In-app M-PESA wording puts the amount between the verb and "to":
+      // "You sent Ksh 2,000.00 to PETER KAMAU on 25/8/26".
+      if (recipientName == null) {
+        final amountThenNameMatch = RegExp(
+          r'(?:sent|paid|transferred)\s+(?:Ksh|KES)\s*[\d,]+(?:\.\d+)?\s+to\s+([A-Z][^.!,\d]+)',
+          caseSensitive: false,
+        ).firstMatch(text);
+        if (amountThenNameMatch != null) {
+          recipientName = _cleanRecipient(amountThenNameMatch.group(1));
+          debugPrint('Found recipient name (amount-first): $recipientName');
+        }
+      }
+
+      // Agent withdrawal: "Withdraw Ksh1,500.00 from 123456 - EQUITY AGENT".
+      // The agent till is shorter than the 9-12 digits the bank pattern wants,
+      // and the verb is "Withdraw", not "withdrawn from".
+      if (recipientName == null) {
+        final agentMatch =
+            RegExp(r'from\s+(\d{4,12})\s*-\s*([A-Z][^.!]+)', caseSensitive: false)
+                .firstMatch(text);
+        if (agentMatch != null) {
+          recipientName = _cleanRecipient(agentMatch.group(2));
+          debugPrint('Found agent name (withdrawal): $recipientName');
         }
       }
 
@@ -115,7 +172,7 @@ class MpesaParser {
             RegExp(r'(?:withdrawn\s+from|goods\s+to)\s+([A-Z]+)', caseSensitive: false)
                 .firstMatch(text);
         if (otherMatch != null) {
-          recipientName = otherMatch.group(1)!.trim();
+          recipientName = _cleanRecipient(otherMatch.group(1));
           debugPrint('Found recipient name (other): $recipientName');
         }
       }

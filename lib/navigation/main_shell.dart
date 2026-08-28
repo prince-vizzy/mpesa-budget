@@ -57,6 +57,10 @@ class _MainShellState extends State<MainShell> {
 
   void _setupNotificationListener() {
     _notificationSub = NotificationService.stream.listen((event) async {
+      if (event.payload == 'refresh') {
+        await _refreshAfterAutoCategorize();
+        return;
+      }
       if (event.payload != 'categorize') return;
       await _offerToCategorize();
     }, onError: (error) {
@@ -68,7 +72,17 @@ class _MainShellState extends State<MainShell> {
     final pending = NotificationService.takePendingEvent();
     if (pending?.payload == 'categorize') {
       WidgetsBinding.instance.addPostFrameCallback((_) => _offerToCategorize());
+    } else if (pending?.payload == 'refresh') {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _refreshAfterAutoCategorize());
     }
+  }
+
+  /// A saved rule already filed the transaction, so there is nothing to ask the
+  /// user — the UI just has to pick up the new spending.
+  Future<void> _refreshAfterAutoCategorize() async {
+    if (!mounted) return;
+    await context.read<CategoryStore>().loadAllData();
   }
 
   Future<void> _offerToCategorize() async {

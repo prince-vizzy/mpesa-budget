@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../database/database_helper.dart';
+import '../services/notification_service.dart';
 import '../state/category_store.dart';
 import '../theme/app_colors.dart';
 import '../widgets/premium_ui.dart';
@@ -27,20 +28,101 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage> {
+class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   String _userName = '';
   final TextEditingController _nameController = TextEditingController();
+  bool? _ignoringBatteryOptimizations;
+  bool? _smsCaptureEnabled;
+  bool _importingHistory = false;
+  int _rulesVersion = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadUserName();
+    _checkBatteryOptimizations();
+    _checkSmsCapture();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _nameController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-check when the user comes back from a system permission dialog.
+    if (state == AppLifecycleState.resumed) {
+      _checkBatteryOptimizations();
+      _checkSmsCapture();
+    }
+  }
+
+  Future<void> _checkBatteryOptimizations() async {
+    final ignoring = await NotificationService.isIgnoringBatteryOptimizations();
+    if (mounted) {
+      setState(() => _ignoringBatteryOptimizations = ignoring);
+    }
+  }
+
+  Future<void> _checkSmsCapture() async {
+    final enabled = await NotificationService.isSmsCaptureEnabled();
+    if (mounted) {
+      setState(() => _smsCaptureEnabled = enabled);
+    }
+  }
+
+  Future<void> _enableSmsCapture() async {
+    final granted = await NotificationService.requestSmsCapture();
+    if (!mounted) return;
+    setState(() => _smsCaptureEnabled = granted);
+    if (!granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'SMS access denied. M-Pesa capture will keep relying on notifications, '
+            'which can miss messages.',
+          ),
+        ),
+      );
+    }
+  }
+
+  /// Pulls in M-Pesa messages older than the week the automatic sweep covers.
+  Future<void> _importHistory() async {
+    setState(() => _importingHistory = true);
+    final queued = await NotificationService.importSmsHistory(
+      DateTime.now().subtract(const Duration(days: 90)),
+    );
+    if (!mounted) return;
+    setState(() => _importingHistory = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          queued == 0
+              ? 'No new M-Pesa messages found in the last 90 days.'
+              : 'Imported $queued M-Pesa message(s) from the last 90 days.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _forgetRule(String recipient, String? categoryName) async {
+    await context.read<CategoryStore>().forgetRecipientRule(recipient);
+    if (!mounted) return;
+    setState(() => _rulesVersion++);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          categoryName == null
+              ? 'Payments to $recipient will be asked about again.'
+              : 'Payments to $recipient will no longer file under $categoryName.',
+        ),
+      ),
+    );
   }
 
   Future<void> _loadUserName() async {
@@ -282,6 +364,225 @@ class _ProfilePageState extends State<ProfilePage> {
                     ],
                   ),
                 ),
+              ),
+
+              // SMS CAPTURE — the only path that does not depend on a
+              // notification being posted, so it is the one that stops
+              // transactions being missed entirely.
+              if (_smsCaptureEnabled == false)
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.sms_failed, color: AppColors.accent, size: 20),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Turn on SMS capture so nothing is missed',
+                              style: TextStyle(
+                                color: AppColors.primaryText,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Reading notifications alone misses transactions that arrive '
+                        'while the app is not running, in a muted conversation, or while '
+                        'you have the M-Pesa thread open. Allowing SMS access lets the '
+                        'app read those messages directly, and recover ones already '
+                        'missed.',
+                        style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _enableSmsCapture,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.accent,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Allow SMS access'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // HISTORY IMPORT, once SMS capture is available.
+              if (_smsCaptureEnabled == true)
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _importingHistory ? null : _importHistory,
+                      icon: _importingHistory
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.history),
+                      label: Text(
+                        _importingHistory
+                            ? 'Importing…'
+                            : 'Import last 90 days of M-Pesa SMS',
+                      ),
+                    ),
+                  ),
+                ),
+
+              // BACKGROUND CAPTURE RELIABILITY WARNING
+              if (_ignoringBatteryOptimizations == false)
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.battery_alert, color: AppColors.accent, size: 20),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Battery optimization may stop M-Pesa capture',
+                              style: TextStyle(
+                                color: AppColors.primaryText,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Android can kill background capture after the app has been closed '
+                        'for a while. Exempt this app from battery optimization to keep it '
+                        'listening for M-Pesa messages.',
+                        style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () =>
+                              NotificationService.requestIgnoreBatteryOptimizations(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.accent,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Allow background capture'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // AUTO-CATEGORIZATION RULES
+              //
+              // Written whenever the user categorises a transaction that has a
+              // payee name, so this list is the record of what will now be
+              // filed without asking.
+              FutureBuilder<List<Map<String, dynamic>>>(
+                key: ValueKey(_rulesVersion),
+                future: context.read<CategoryStore>().getRecipientRules(),
+                builder: (context, snapshot) {
+                  final rules = snapshot.data ?? const <Map<String, dynamic>>[];
+                  if (rules.isEmpty) return const SizedBox.shrink();
+
+                  return Container(
+                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: cardBackground,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Auto-categorized payees',
+                          style: TextStyle(
+                            color: AppColors.primaryText,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Repeat payments to these are filed automatically. '
+                          'Categorizing a transaction differently updates its rule.',
+                          style: TextStyle(
+                            color: AppColors.secondaryText,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ...rules.map((rule) {
+                          final recipient = rule['recipient'] as String? ?? '';
+                          final categoryName = rule['category_name'] as String?;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        recipient,
+                                        style: const TextStyle(
+                                          color: AppColors.primaryText,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      Text(
+                                        categoryName ?? 'Unknown category',
+                                        style: const TextStyle(
+                                          color: AppColors.secondaryText,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  color: AppColors.secondaryText,
+                                  tooltip: 'Stop auto-categorizing',
+                                  onPressed: () =>
+                                      _forgetRule(recipient, categoryName),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  );
+                },
               ),
 
               // BUDGET OVERVIEW SECTION
