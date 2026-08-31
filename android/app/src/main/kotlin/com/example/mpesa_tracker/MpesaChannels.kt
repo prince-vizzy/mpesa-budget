@@ -104,15 +104,12 @@ object MpesaChannels {
                 "hasSmsPermission" -> result.success(MpesaSms.canReadInbox(appContext))
 
                 // Sweeps the SMS inbox for anything that never reached us live.
-                // "since" (epoch millis) overrides the stored bookmark, for an
-                // explicit deeper import.
                 "backfillSms" -> {
-                    val since = (call.argument<Any>("since") as? Number)?.toLong()
                     // Querying the SMS provider is disk I/O, so keep it off the
                     // main thread and post the reply back.
                     Thread {
                         val queued = try {
-                            MpesaSms.backfill(appContext, since)
+                            MpesaSms.backfill(appContext)
                         } catch (t: Throwable) {
                             Log.w(TAG, "backfillSms failed", t)
                             0

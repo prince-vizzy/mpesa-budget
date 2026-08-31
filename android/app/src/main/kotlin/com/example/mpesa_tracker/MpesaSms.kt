@@ -45,10 +45,9 @@ object MpesaSms {
      * Queues every M-Pesa message in the SMS inbox that this app has not already
      * seen, and moves the bookmark forward.
      *
-     * @param since overrides the stored bookmark, for an explicit deeper import.
      * @return how many new messages were queued.
      */
-    fun backfill(context: Context, since: Long? = null): Int {
+    fun backfill(context: Context): Int {
         val appContext = context.applicationContext
         if (!canReadInbox(appContext)) {
             Log.d(TAG, "READ_SMS not granted — skipping inbox sweep.")
@@ -56,8 +55,8 @@ object MpesaSms {
         }
 
         val bookmark = MpesaStore.lastSmsScan(appContext)
-        val from = since
-            ?: if (bookmark > 0L) bookmark
+        val from =
+            if (bookmark > 0L) bookmark
             else System.currentTimeMillis() - FIRST_SCAN_WINDOW_MS
 
         var queued = 0
@@ -111,8 +110,8 @@ object MpesaSms {
     }
 
     /** Queues anything new from the inbox and nudges whichever Dart side is alive. */
-    fun backfillAndNotify(context: Context, since: Long? = null): Int {
-        val queued = backfill(context, since)
+    fun backfillAndNotify(context: Context): Int {
+        val queued = backfill(context)
         if (queued > 0 && !MpesaChannels.pokeForeground()) {
             MpesaBackgroundEngine.wake(context.applicationContext)
         }

@@ -306,14 +306,4 @@ class NotificationService {
     await drainAndProcess();
     return true;
   }
-
-  /// Imports every M-Pesa message in the inbox back to [since], for a user who
-  /// wants history rather than just what arrives from now on.
-  ///
-  /// Returns how many new messages were queued.
-  static Future<int> importSmsHistory(DateTime since) async {
-    final queued = await MpesaReceiver.backfillFromSms(since: since);
-    await drainAndProcess();
-    return queued;
-  }
 }

@@ -1,0 +1,8 @@
+node_modules
+
+# Local database — this is your data, not source.
+data/*.db
+data/*.db-journal
+
+.env
+*.log

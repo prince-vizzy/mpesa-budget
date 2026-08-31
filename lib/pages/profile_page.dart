@@ -33,7 +33,6 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   final TextEditingController _nameController = TextEditingController();
   bool? _ignoringBatteryOptimizations;
   bool? _smsCaptureEnabled;
-  bool _importingHistory = false;
   int _rulesVersion = 0;
 
   @override
@@ -91,25 +90,6 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     }
   }
 
-  /// Pulls in M-Pesa messages older than the week the automatic sweep covers.
-  Future<void> _importHistory() async {
-    setState(() => _importingHistory = true);
-    final queued = await NotificationService.importSmsHistory(
-      DateTime.now().subtract(const Duration(days: 90)),
-    );
-    if (!mounted) return;
-    setState(() => _importingHistory = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          queued == 0
-              ? 'No new M-Pesa messages found in the last 90 days.'
-              : 'Imported $queued M-Pesa message(s) from the last 90 days.',
-        ),
-      ),
-    );
-  }
-
   Future<void> _forgetRule(String recipient, String? categoryName) async {
     await context.read<CategoryStore>().forgetRecipientRule(recipient);
     if (!mounted) return;
@@ -120,6 +100,48 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
           categoryName == null
               ? 'Payments to $recipient will be asked about again.'
               : 'Payments to $recipient will no longer file under $categoryName.',
+        ),
+      ),
+    );
+  }
+
+  /// Clearing is irreversible and the transactions do not come back on the next
+  /// sweep, so it asks first and says exactly what will go.
+  Future<void> _confirmClearUncategorized() async {
+    final store = context.read<CategoryStore>();
+    final count = store.uncategorizedTransactions.length;
+    if (count == 0) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Clear uncategorized queue?'),
+        content: Text(
+          '$count transaction${count == 1 ? '' : 's'} waiting to be categorized '
+          'will be removed for good. Transactions already filed under a category '
+          'are not affected, and neither are your auto-categorization rules.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final removed = await store.clearUncategorizedTransactions();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Removed $removed uncategorized transaction${removed == 1 ? '' : 's'}.',
         ),
       ),
     );
@@ -422,30 +444,6 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
                   ),
                 ),
 
-              // HISTORY IMPORT, once SMS capture is available.
-              if (_smsCaptureEnabled == true)
-                Container(
-                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _importingHistory ? null : _importHistory,
-                      icon: _importingHistory
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.history),
-                      label: Text(
-                        _importingHistory
-                            ? 'Importing…'
-                            : 'Import last 90 days of M-Pesa SMS',
-                      ),
-                    ),
-                  ),
-                ),
-
               // BACKGROUND CAPTURE RELIABILITY WARNING
               if (_ignoringBatteryOptimizations == false)
                 Container(
@@ -579,6 +577,55 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
                             ),
                           );
                         }),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
+              // PENDING QUEUE
+              Consumer<CategoryStore>(
+                builder: (context, store, _) {
+                  final pending = store.uncategorizedTransactions.length;
+                  if (pending == 0) return const SizedBox.shrink();
+
+                  return Container(
+                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: cardBackground,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$pending transaction${pending == 1 ? '' : 's'} waiting '
+                          'to be categorized',
+                          style: const TextStyle(
+                            color: AppColors.primaryText,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Old payments you no longer want to file can be cleared '
+                          'out. They will not come back.',
+                          style: TextStyle(
+                            color: AppColors.secondaryText,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _confirmClearUncategorized,
+                            icon: const Icon(Icons.delete_sweep_outlined),
+                            label: const Text('Clear uncategorized queue'),
+                          ),
+                        ),
                       ],
                     ),
                   );

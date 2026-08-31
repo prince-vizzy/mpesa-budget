@@ -136,6 +136,13 @@ class CategoryStore with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Empties the pending-categorization queue. Returns how many were removed.
+  Future<int> clearUncategorizedTransactions() async {
+    final removed = await _dbHelper.clearUncategorizedTransactions();
+    await loadAllData();
+    return removed;
+  }
+
   Future<List<Transaction>> getAllCategorizedTransactions() async {
     return await _dbHelper.getAllCategorizedTransactions();
   }

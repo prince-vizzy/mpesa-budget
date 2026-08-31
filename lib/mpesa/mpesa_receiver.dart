@@ -100,16 +100,13 @@ class MpesaReceiver {
   /// delivered while the process was dead, during a reboot, in a muted or
   /// currently-open conversation, or before the user granted any permission.
   ///
-  /// Pass [since] to import from further back than the stored bookmark; the first
-  /// automatic sweep only looks at the past week so it cannot dump years of
-  /// history into the uncategorized list.
+  /// The first sweep only looks at the past week, so enabling capture cannot
+  /// dump years of old messages into the uncategorized queue.
   ///
   /// Returns how many new messages were queued.
-  static Future<int> backfillFromSms({DateTime? since}) async {
+  static Future<int> backfillFromSms() async {
     try {
-      final queued = await _methodChannel.invokeMethod<int>('backfillSms', {
-        'since': since?.millisecondsSinceEpoch,
-      });
+      final queued = await _methodChannel.invokeMethod<int>('backfillSms');
       return queued ?? 0;
     } catch (e) {
       debugPrint('MpesaReceiver backfillFromSms error: $e');

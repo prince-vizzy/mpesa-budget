@@ -170,6 +170,28 @@ void main() {
     expect(intake.wasAutoCategorized, isFalse);
   });
 
+  test('clearing the queue drops pending items but keeps what was filed', () async {
+    await db.insertParsedTransaction(payment('NAIVAS LIMITED', 200));
+    final queued = await db.getUncategorizedTransactions();
+    await db.categorizeTransaction(
+      transactionId: queued.first['id'] as int,
+      categoryId: foodId,
+    );
+
+    // One filed by the rule, one left pending under a payee with no rule.
+    await db.insertParsedTransaction(payment('NAIVAS LIMITED', 350));
+    await db.insertParsedTransaction(payment('SHELL KILIMANI', 900));
+    expect(await uncategorizedCount(), 1);
+
+    final removed = await db.clearUncategorizedTransactions();
+
+    expect(removed, 1);
+    expect(await uncategorizedCount(), 0);
+    // Categorized spending and the rules both survive.
+    expect((await db.getAllCategorizedTransactions()).length, 2);
+    expect(await db.getRecipientCategories(), isNotEmpty);
+  });
+
   test('the same message arriving twice is only stored once', () async {
     final duplicate = payment('NAIVAS LIMITED', 200);
 

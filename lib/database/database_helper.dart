@@ -568,6 +568,15 @@ class DatabaseHelper {
     await db.delete('uncategorized_transactions', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// Empties the pending-categorization queue.
+  ///
+  /// Only what is still waiting is removed — anything already filed under a
+  /// category keeps its place and its spending. Returns how many went.
+  Future<int> clearUncategorizedTransactions() async {
+    final db = await database;
+    return db.delete('uncategorized_transactions');
+  }
+
   Future<List<Map<String, dynamic>>> getUncategorizedTransactions() async {
     final db = await database;
     return await db.query('uncategorized_transactions');
