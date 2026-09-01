@@ -112,8 +112,8 @@ class NotificationService {
       if (launch?.didNotificationLaunchApp ?? false) {
         final payload = launch!.notificationResponse?.payload;
         debugPrint('NotificationService: launched by notification ($payload)');
-        if (payload == 'categorize') {
-          _emit(NotificationEvent(payload: 'categorize'));
+        if (payload == 'categorize' || payload == 'event') {
+          _emit(NotificationEvent(payload: payload));
         }
       }
     } catch (e) {
@@ -217,12 +217,18 @@ class NotificationService {
           name,
           amount,
           categoryName: intake.categoryName,
+          eventName: intake.eventName,
         );
 
         // Nothing to ask about when a rule already handled it — the UI just
-        // needs to pick up the new spending.
+        // needs to pick up the new spending. Event spending is filed against
+        // the event, so send the user there rather than to the normal picker.
         _emit(NotificationEvent(
-          payload: intake.wasAutoCategorized ? 'refresh' : 'categorize',
+          payload: intake.isEventSpending
+              ? 'event'
+              : intake.wasAutoCategorized
+                  ? 'refresh'
+                  : 'categorize',
         ));
       } catch (dbError) {
         debugPrint('Error processing parsed transaction: $dbError');
@@ -234,7 +240,7 @@ class NotificationService {
   }
 
   static Future<void> _showTransactionNotification(
-      String name, double amount, {String? categoryName}) async {
+      String name, double amount, {String? categoryName, String? eventName}) async {
     const androidDetails = AndroidNotificationDetails(
       'uncategorized_transactions',
       'Uncategorized Transactions',
@@ -247,22 +253,36 @@ class NotificationService {
     const details = NotificationDetails(android: androidDetails);
 
     final autoCategorized = categoryName != null && categoryName.isNotEmpty;
+    final duringEvent = eventName != null && eventName.isNotEmpty;
+    final money = 'Ksh ${amount.toStringAsFixed(0)}';
+
+    final String body;
+    if (duringEvent) {
+      body = '$money during $eventName — tap to file it';
+    } else if (autoCategorized) {
+      body = '$money — filed under $categoryName';
+    } else {
+      body = '$money — tap to categorize';
+    }
 
     await _localNotifications.show(
       0, // Use fixed ID to replace previous notification
       name,
-      autoCategorized
-          ? 'Ksh ${amount.toStringAsFixed(0)} — filed under $categoryName'
-          : 'Ksh ${amount.toStringAsFixed(0)} — tap to categorize',
+      body,
       details,
-      // Only the uncategorized case has anything to open on tap.
-      payload: autoCategorized ? 'refresh' : 'categorize',
+      // Only the cases that still need the user have somewhere to open.
+      payload: duringEvent
+          ? 'event'
+          : autoCategorized
+              ? 'refresh'
+              : 'categorize',
     );
   }
 
   static void _onNotificationTap(NotificationResponse response) {
-    if (response.payload == 'categorize') {
-      _events.add(NotificationEvent(payload: 'categorize'));
+    final payload = response.payload;
+    if (payload == 'categorize' || payload == 'event') {
+      _events.add(NotificationEvent(payload: payload));
     }
   }
 

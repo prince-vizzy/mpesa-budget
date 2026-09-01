@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/category.dart';
 import '../models/transaction.dart';
+import '../models/spend_bucket.dart';
+
+export '../models/spend_bucket.dart';
 import '../services/dashboard_sync_service.dart';
 
 class CategoryStore with ChangeNotifier {
@@ -159,17 +162,13 @@ class CategoryStore with ChangeNotifier {
      HISTORY PAGE (SAFE PLACEHOLDERS)
   ========================================================= */
 
-  Future<Map<int, double>> getDailySpendingData(int days) async =>
-      _emptySeries(days);
-
-  Future<Map<int, double>> getWeeklySpendingData(int weeks) async =>
-      _emptySeries(weeks);
-
-  Future<Map<int, double>> getMonthlySpendingData(int months) async =>
-      _emptySeries(months);
-
-  Future<Map<int, double>> getAnnualSpendingData(int years) async =>
-      _emptySeries(years);
+  /// Total spend per period, oldest bucket first. See
+  /// [DatabaseHelper.getTotalSpendSeries].
+  Future<List<SpendBucket>> getTotalSpendSeries(
+    SpendGranularity granularity, {
+    int buckets = 0,
+  }) =>
+      _dbHelper.getTotalSpendSeries(granularity, buckets: buckets);
 
   Future<Map<String, List<double>>> getCategoryTrendSeries({
     required int bucketCount,
@@ -213,11 +212,4 @@ class CategoryStore with ChangeNotifier {
     }
   }
 
-  /* =========================================================
-     UTIL
-  ========================================================= */
-
-  Map<int, double> _emptySeries(int length) {
-    return {for (int i = 0; i < length; i++) i: 0.0};
-  }
 }

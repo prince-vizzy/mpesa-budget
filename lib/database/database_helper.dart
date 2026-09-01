@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqflite/sqflite.dart' as sql;
 import 'package:path/path.dart';
 
+import '../models/budget_event.dart';
 import '../models/category.dart';
+import '../models/spend_bucket.dart';
 import '../models/transaction.dart';
 
 class SpendRollup {
@@ -29,10 +31,14 @@ class TransactionIntake {
   /// True when we had already stored this transaction and did nothing.
   final bool wasDuplicate;
 
+  /// Set when the payment landed inside an event window, naming that event.
+  final String? eventName;
+
   const TransactionIntake._({
     this.wasAutoCategorized = false,
     this.categoryName,
     this.wasDuplicate = false,
+    this.eventName,
   });
 
   /// Stored, and waiting for the user to pick a category.
@@ -42,9 +48,16 @@ class TransactionIntake {
   factory TransactionIntake.categorized(String? categoryName) =>
       TransactionIntake._(wasAutoCategorized: true, categoryName: categoryName);
 
+  /// Stored against an event, waiting for one of its line items.
+  factory TransactionIntake.queuedForEvent(String eventName) =>
+      TransactionIntake._(eventName: eventName);
+
   /// Already known; nothing was written.
   factory TransactionIntake.duplicate() =>
       const TransactionIntake._(wasDuplicate: true);
+
+  /// True when the payment belongs to an event rather than a normal category.
+  bool get isEventSpending => eventName != null;
 }
 
 class DatabaseHelper {
@@ -52,7 +65,7 @@ class DatabaseHelper {
   static sql.Database? _database;
 
   static const String _databaseName = 'mpesa_tracker.db';
-  static const int _databaseVersion = 9;
+  static const int _databaseVersion = 10;
 
   DatabaseHelper._privateConstructor();
 
@@ -116,7 +129,9 @@ class DatabaseHelper {
         status TEXT,
         name TEXT,
         user_first_name TEXT,
-        raw_message TEXT
+        raw_message TEXT,
+        event_id INTEGER,
+        event_category_id INTEGER
       )
     ''');
 
@@ -128,7 +143,8 @@ class DatabaseHelper {
         date INTEGER,
         name TEXT,
         user_first_name TEXT,
-        raw_message TEXT
+        raw_message TEXT,
+        event_id INTEGER
       )
     ''');
 
@@ -137,6 +153,25 @@ class DatabaseHelper {
         recipient TEXT PRIMARY KEY,
         category_id INTEGER,
         category_name TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        starts_at INTEGER NOT NULL,
+        ends_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE event_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        budget REAL DEFAULT 0
       )
     ''');
 
@@ -207,6 +242,38 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE uncategorized_transactions ADD COLUMN raw_message TEXT');
       } catch (_) {}
     }
+    if (oldVersion < 10) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            starts_at INTEGER NOT NULL,
+            ends_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+          )
+        ''');
+      } catch (_) {}
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS event_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            budget REAL DEFAULT 0
+          )
+        ''');
+      } catch (_) {}
+      for (final statement in const [
+        'ALTER TABLE transactions ADD COLUMN event_id INTEGER',
+        'ALTER TABLE transactions ADD COLUMN event_category_id INTEGER',
+        'ALTER TABLE uncategorized_transactions ADD COLUMN event_id INTEGER',
+      ]) {
+        try {
+          await db.execute(statement);
+        } catch (_) {}
+      }
+    }
     if (oldVersion < 9) {
       // recipient_category was only ever created in _onCreate, so every install
       // that arrived here by upgrading is missing it.
@@ -220,6 +287,292 @@ class DatabaseHelper {
         ''');
       } catch (_) {}
     }
+  }
+
+  /* =========================================================
+     EVENTS (one-off occasions with their own budget)
+  ========================================================= */
+
+  /// Creates an event and its line items together, so a half-made event can
+  /// never end up owning a window with nothing to file against.
+  Future<int> createEvent(BudgetEvent event) async {
+    final db = await database;
+
+    return db.transaction((txn) async {
+      final eventId = await txn.insert('events', {
+        'name': event.name,
+        'starts_at': event.startsAt.millisecondsSinceEpoch,
+        'ends_at': event.endsAt.millisecondsSinceEpoch,
+        'created_at': event.createdAt.millisecondsSinceEpoch,
+      });
+
+      for (final category in event.categories) {
+        await txn.insert('event_categories', {
+          'event_id': eventId,
+          'name': category.name,
+          'budget': category.budget,
+        });
+      }
+
+      return eventId;
+    });
+  }
+
+  Future<void> updateEvent(BudgetEvent event) async {
+    if (event.id == null) return;
+    final db = await database;
+    await db.update(
+      'events',
+      {
+        'name': event.name,
+        'starts_at': event.startsAt.millisecondsSinceEpoch,
+        'ends_at': event.endsAt.millisecondsSinceEpoch,
+      },
+      where: 'id = ?',
+      whereArgs: [event.id],
+    );
+  }
+
+  /// Removes an event and its line items.
+  ///
+  /// Payments captured during it are kept, because they are real spending, but
+  /// they lose the event link and return to the normal uncategorized queue to
+  /// be filed against an ordinary category.
+  Future<void> deleteEvent(int eventId) async {
+    final db = await database;
+
+    await db.transaction((txn) async {
+      final filed = await txn.query(
+        'transactions',
+        where: 'event_id = ?',
+        whereArgs: [eventId],
+      );
+
+      for (final row in filed) {
+        await txn.insert('uncategorized_transactions', {
+          'description': row['description'],
+          'amount': row['amount'],
+          'date': row['date'],
+          'name': row['name'],
+          'user_first_name': row['user_first_name'],
+          'raw_message': row['raw_message'],
+        });
+      }
+      await txn.delete('transactions', where: 'event_id = ?', whereArgs: [eventId]);
+
+      await txn.update(
+        'uncategorized_transactions',
+        {'event_id': null},
+        where: 'event_id = ?',
+        whereArgs: [eventId],
+      );
+
+      await txn.delete('event_categories',
+          where: 'event_id = ?', whereArgs: [eventId]);
+      await txn.delete('events', where: 'id = ?', whereArgs: [eventId]);
+    });
+  }
+
+  Future<void> addEventCategory(int eventId, String name, double budget) async {
+    final db = await database;
+    await db.insert('event_categories', {
+      'event_id': eventId,
+      'name': name,
+      'budget': budget,
+    });
+  }
+
+  Future<void> updateEventCategory(EventCategory category) async {
+    if (category.id == null) return;
+    final db = await database;
+    await db.update(
+      'event_categories',
+      {'name': category.name, 'budget': category.budget},
+      where: 'id = ?',
+      whereArgs: [category.id],
+    );
+  }
+
+  /// Removes a line item. Anything filed under it goes back to the queue rather
+  /// than vanishing with it.
+  Future<void> deleteEventCategory(int categoryId) async {
+    final db = await database;
+
+    await db.transaction((txn) async {
+      final filed = await txn.query(
+        'transactions',
+        where: 'event_category_id = ?',
+        whereArgs: [categoryId],
+      );
+
+      for (final row in filed) {
+        await txn.insert('uncategorized_transactions', {
+          'description': row['description'],
+          'amount': row['amount'],
+          'date': row['date'],
+          'name': row['name'],
+          'user_first_name': row['user_first_name'],
+          'raw_message': row['raw_message'],
+          'event_id': row['event_id'],
+        });
+      }
+      await txn.delete(
+        'transactions',
+        where: 'event_category_id = ?',
+        whereArgs: [categoryId],
+      );
+      await txn.delete('event_categories',
+          where: 'id = ?', whereArgs: [categoryId]);
+    });
+  }
+
+  /// The event whose window contains [moment], or null.
+  ///
+  /// Windows cannot overlap (the create flow refuses it), so the latest match
+  /// is the only match.
+  Future<BudgetEvent?> eventAt(DateTime moment) async {
+    final db = await database;
+    final stamp = moment.millisecondsSinceEpoch;
+
+    final rows = await db.query(
+      'events',
+      where: 'starts_at <= ? AND ends_at >= ?',
+      whereArgs: [stamp, stamp],
+      orderBy: 'starts_at DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return BudgetEvent.fromMap(rows.first);
+  }
+
+  /// Any event whose window overlaps [startsAt]..[endsAt], ignoring [exceptId].
+  ///
+  /// Two events covering the same moment would make attribution ambiguous, so
+  /// the create flow uses this to refuse before saving.
+  Future<BudgetEvent?> overlappingEvent(
+    DateTime startsAt,
+    DateTime endsAt, {
+    int? exceptId,
+  }) async {
+    final db = await database;
+
+    final rows = await db.query(
+      'events',
+      where: 'starts_at <= ? AND ends_at >= ?'
+          '${exceptId == null ? '' : ' AND id != ?'}',
+      whereArgs: [
+        endsAt.millisecondsSinceEpoch,
+        startsAt.millisecondsSinceEpoch,
+        if (exceptId != null) exceptId,
+      ],
+      orderBy: 'starts_at ASC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return BudgetEvent.fromMap(rows.first);
+  }
+
+  /// Every event, newest first, with its line items and what each has spent.
+  Future<List<BudgetEvent>> getEvents() async {
+    final db = await database;
+    final eventRows = await db.query('events', orderBy: 'starts_at DESC');
+    if (eventRows.isEmpty) return const [];
+
+    final categoryRows = await db.query('event_categories', orderBy: 'id ASC');
+
+    // One pass for all the spending, rather than a query per line item.
+    final spendRows = await db.rawQuery('''
+      SELECT event_category_id, SUM(amount) AS total
+      FROM transactions
+      WHERE event_category_id IS NOT NULL
+      GROUP BY event_category_id
+    ''');
+    final spentByCategory = {
+      for (final row in spendRows)
+        row['event_category_id'] as int: (row['total'] as num? ?? 0).toDouble(),
+    };
+
+    return eventRows.map((eventRow) {
+      final id = eventRow['id'] as int;
+      final categories = categoryRows
+          .where((c) => c['event_id'] == id)
+          .map((c) => EventCategory.fromMap(
+                c,
+                spent: spentByCategory[c['id'] as int] ?? 0,
+              ))
+          .toList();
+      return BudgetEvent.fromMap(eventRow, categories: categories);
+    }).toList();
+  }
+
+  /// Payments captured during an event that still need a line item.
+  Future<List<Map<String, dynamic>>> getEventQueue(int eventId) async {
+    final db = await database;
+    return db.query(
+      'uncategorized_transactions',
+      where: 'event_id = ?',
+      whereArgs: [eventId],
+      orderBy: 'date DESC',
+    );
+  }
+
+  /// Files a queued payment under one of its event line items.
+  Future<void> categorizeEventTransaction({
+    required int transactionId,
+    required int eventCategoryId,
+  }) async {
+    final db = await database;
+
+    final queued = await db.query(
+      'uncategorized_transactions',
+      where: 'id = ?',
+      whereArgs: [transactionId],
+      limit: 1,
+    );
+    if (queued.isEmpty) return;
+    final row = queued.first;
+
+    final category = await db.query(
+      'event_categories',
+      where: 'id = ?',
+      whereArgs: [eventCategoryId],
+      limit: 1,
+    );
+    if (category.isEmpty) return;
+
+    await db.transaction((txn) async {
+      await txn.insert('transactions', {
+        'description': row['description'],
+        'amount': row['amount'],
+        'date': row['date'],
+        // No category_id on purpose: the normal budgets roll up by category_id,
+        // and event spending is deliberately kept out of them.
+        'category_name': category.first['name'],
+        'status': 'categorized',
+        'name': row['name'],
+        'user_first_name': row['user_first_name'],
+        'raw_message': row['raw_message'],
+        'event_id': row['event_id'],
+        'event_category_id': eventCategoryId,
+      });
+      await txn.delete(
+        'uncategorized_transactions',
+        where: 'id = ?',
+        whereArgs: [transactionId],
+      );
+    });
+  }
+
+  /// Payments filed under an event, newest first.
+  Future<List<Transaction>> getEventTransactions(int eventId) async {
+    final db = await database;
+    final rows = await db.query(
+      'transactions',
+      where: 'event_id = ?',
+      whereArgs: [eventId],
+      orderBy: 'date DESC',
+    );
+    return rows.map(Transaction.fromMap).toList();
   }
 
   /* =========================================================
@@ -493,6 +846,7 @@ class DatabaseHelper {
         SUM(CASE WHEN date >= ? THEN amount ELSE 0 END) AS spent_year
       FROM transactions
       WHERE status = 'categorized' AND category_id IS NOT NULL
+        AND event_id IS NULL
       GROUP BY category_id
       ''',
       [startOfDay, startOfWeek, startOfMonth, startOfYear],
@@ -511,6 +865,44 @@ class DatabaseHelper {
     return result;
   }
 
+  /// Total spend per period, oldest bucket first.
+  ///
+  /// Buckets are calendar-aligned rather than rolling windows back from now: a
+  /// bar labelled "Aug" has to mean August, not the 30 days ending today.
+  /// Periods with no spending come back as zero rather than missing, so the
+  /// chart keeps an even time axis.
+  ///
+  /// This is money out, so it includes event spending. Events are held apart
+  /// from the category *budgets*, not from what was actually spent.
+  Future<List<SpendBucket>> getTotalSpendSeries(
+    SpendGranularity granularity, {
+    int buckets = 0,
+  }) async {
+    final count = buckets > 0 ? buckets : granularity.defaultBuckets;
+    final now = DateTime.now();
+
+    final starts = <DateTime>[
+      for (int i = count - 1; i >= 0; i--)
+        granularity.bucketStart(now, stepsBack: i),
+    ];
+    final index = {for (int i = 0; i < starts.length; i++) starts[i]: i};
+
+    final totals = List<double>.filled(count, 0);
+    for (final tx in await getAllCategorizedTransactions()) {
+      final slot = index[granularity.bucketStart(tx.date)];
+      if (slot != null) totals[slot] += tx.amount;
+    }
+
+    return [
+      for (int i = 0; i < count; i++)
+        SpendBucket(
+          start: starts[i],
+          label: granularity.label(starts[i]),
+          total: totals[i],
+        ),
+    ];
+  }
+
   Future<Map<String, double>> getCategorySpendingByDays(int days) async {
     final db = await database;
     final startTime = DateTime.now()
@@ -523,7 +915,10 @@ class DatabaseHelper {
         COALESCE(category_name, 'Uncategorized') AS category_name,
         SUM(amount) AS total
       FROM transactions
-      WHERE status = ? AND date >= ?
+      -- Event spending is budgeted inside its event and is deliberately left
+      -- out here. Without this it would surface as an ordinary category, since
+      -- an event line item writes its name into category_name.
+      WHERE status = ? AND date >= ? AND event_id IS NULL
       GROUP BY COALESCE(category_name, 'Uncategorized')
       ORDER BY total DESC
       ''',
@@ -577,9 +972,18 @@ class DatabaseHelper {
     return db.delete('uncategorized_transactions');
   }
 
+  /// Payments waiting for an ordinary category.
+  ///
+  /// Anything captured inside an event window is excluded: it belongs to that
+  /// event and is filed from the Events tab against one of its line items.
+  /// Offering it here would let it land in a normal category and quietly break
+  /// the separation between event and everyday spending.
   Future<List<Map<String, dynamic>>> getUncategorizedTransactions() async {
     final db = await database;
-    return await db.query('uncategorized_transactions');
+    return await db.query(
+      'uncategorized_transactions',
+      where: 'event_id IS NULL',
+    );
   }
 
   /// Stores a freshly parsed transaction, applying a saved recipient rule when
@@ -607,6 +1011,24 @@ class DatabaseHelper {
 
     // Get user's first name from settings and include it in the transaction
     final userFirstName = await getUserFirstName();
+
+    // An event owns its window outright: anything paid inside it is event
+    // spending, so a normal recipient rule must not claim it first. It waits
+    // for one of the event's own line items instead.
+    final event = await eventAt(transaction.date);
+    if (event != null) {
+      await db.insert('uncategorized_transactions', {
+        'description': transaction.description,
+        'amount': transaction.amount,
+        'date': transaction.date.millisecondsSinceEpoch,
+        'name': transaction.name,
+        'user_first_name': userFirstName,
+        'raw_message': transaction.rawMessage,
+        'event_id': event.id,
+      });
+      return TransactionIntake.queuedForEvent(event.name);
+    }
+
     final rule = await getRecipientCategory(transaction.name);
 
     if (rule == null) {

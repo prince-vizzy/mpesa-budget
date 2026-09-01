@@ -6,6 +6,7 @@ import 'navigation/main_shell.dart';
 import 'pages/onboarding_page.dart';
 import 'services/notification_service.dart';
 import 'state/category_store.dart';
+import 'state/event_store.dart';
 import 'theme/app_colors.dart';
 
 Future<void> main() async {
@@ -19,8 +20,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => CategoryStore(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => CategoryStore()),
+        ChangeNotifierProvider(create: (_) => EventStore()),
+      ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         navigatorKey: NotificationService.navigatorKey,

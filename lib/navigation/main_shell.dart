@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import 'dart:async';
 
 import '../pages/home_page.dart';
+import '../pages/events_page.dart';
 import '../pages/history_page.dart';
 import '../pages/profile_page.dart';
 import '../state/category_store.dart';
+import '../state/event_store.dart';
 import '../theme/app_colors.dart';
 import '../widgets/frequency_loader.dart';
 import '../services/notification_service.dart';
@@ -25,9 +27,13 @@ class _MainShellState extends State<MainShell> {
   bool _isCategorizeDialogOpen = false;
   StreamSubscription<NotificationEvent>? _notificationSub;
 
+  /// Index of the Events tab, used when a notification asks us to open it.
+  static const int _eventsTab = 2;
+
   final List<Widget> _pages = const [
     HomePage(),
     HistoryPage(),
+    EventsPage(),
     ProfilePage(),
   ];
 
@@ -61,6 +67,10 @@ class _MainShellState extends State<MainShell> {
         await _refreshAfterAutoCategorize();
         return;
       }
+      if (event.payload == 'event') {
+        await _openEvents();
+        return;
+      }
       if (event.payload != 'categorize') return;
       await _offerToCategorize();
     }, onError: (error) {
@@ -75,7 +85,19 @@ class _MainShellState extends State<MainShell> {
     } else if (pending?.payload == 'refresh') {
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _refreshAfterAutoCategorize());
+    } else if (pending?.payload == 'event') {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openEvents());
     }
+  }
+
+  /// A payment landed inside an event window. It is filed against the event
+  /// rather than an everyday category, so take the user there instead of
+  /// opening the normal picker.
+  Future<void> _openEvents() async {
+    if (!mounted) return;
+    await context.read<EventStore>().load();
+    if (!mounted) return;
+    setState(() => _index = _eventsTab);
   }
 
   /// A saved rule already filed the transaction, so there is nothing to ask the
@@ -310,6 +332,11 @@ class _MainShellState extends State<MainShell> {
                         icon: Icon(Icons.query_stats_outlined),
                         activeIcon: Icon(Icons.query_stats),
                         label: 'History',
+                      ),
+                      BottomNavigationBarItem(
+                        icon: Icon(Icons.celebration_outlined),
+                        activeIcon: Icon(Icons.celebration),
+                        label: 'Events',
                       ),
                       BottomNavigationBarItem(
                         icon: Icon(Icons.person_outline),

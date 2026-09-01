@@ -10,6 +10,7 @@ import '../models/transaction.dart';
 import '../theme/app_colors.dart';
 import '../widgets/frequency_loader.dart';
 import '../widgets/premium_ui.dart';
+import '../widgets/total_spend_chart.dart';
 
 enum TimeRange { daily, weekly, monthly, annually }
 enum ChartMode { trend, category }
@@ -27,6 +28,7 @@ class _HistoryPageState extends State<HistoryPage> {
   String _categoryQuery = '';
   Future<Map<String, List<double>>>? _trendFuture;
   Future<Map<String, double>>? _usageFuture;
+  Future<List<SpendBucket>>? _totalsFuture;
   Future<List<Transaction>>? _transactionsFuture;
   Set<String> _enabledCategories = {};
   Set<String> _visibleCategories = {};
@@ -44,6 +46,20 @@ class _HistoryPageState extends State<HistoryPage> {
   void dispose() {
     _revealTimer?.cancel();
     super.dispose();
+  }
+
+  /// The range selector drives both the totals chart and the category charts.
+  SpendGranularity get _granularity {
+    switch (_selectedRange) {
+      case TimeRange.daily:
+        return SpendGranularity.day;
+      case TimeRange.weekly:
+        return SpendGranularity.week;
+      case TimeRange.monthly:
+        return SpendGranularity.month;
+      case TimeRange.annually:
+        return SpendGranularity.year;
+    }
   }
 
   Future<Map<String, List<double>>> _getTrendData(CategoryStore store) {
@@ -113,6 +129,7 @@ class _HistoryPageState extends State<HistoryPage> {
   void _reloadData({bool resetToggles = false}) {
     final store = context.read<CategoryStore>();
     _transactionsFuture = store.getAllCategorizedTransactions();
+    _totalsFuture = store.getTotalSpendSeries(_granularity);
 
     if (_chartMode == ChartMode.trend) {
       _trendFuture = _getTrendData(store);
@@ -253,6 +270,32 @@ class _HistoryPageState extends State<HistoryPage> {
                       padding: EdgeInsets.symmetric(horizontal: 12),
                       child: Text('Annual')),
                 ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            /* ================= TOTAL SPEND ================= */
+            // The headline: one series, the same range selector above it. Shown
+            // in both chart modes, because "what did I spend" is the question
+            // the page opens with.
+
+            GlassPanel(
+              padding: const EdgeInsets.all(16),
+              child: FutureBuilder<List<SpendBucket>>(
+                future: _totalsFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const SizedBox(
+                      height: 280,
+                      child: Center(child: FrequencyLoader()),
+                    );
+                  }
+                  return TotalSpendChart(
+                    buckets: snapshot.data ?? const <SpendBucket>[],
+                    granularity: _granularity,
+                  );
+                },
               ),
             ),
 
