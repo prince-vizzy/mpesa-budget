@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'database/database_helper.dart';
 import 'navigation/main_shell.dart';
 import 'pages/onboarding_page.dart';
+import 'security/app_lock_gate.dart';
 import 'services/notification_service.dart';
 import 'state/category_store.dart';
 import 'state/event_store.dart';
@@ -54,6 +55,8 @@ class MyApp extends StatelessWidget {
             contentTextStyle: TextStyle(color: AppColors.primaryText),
           ),
         ),
+        // Above the Navigator, so the lock covers every route and dialog.
+        builder: (context, child) => AppLockGate(child: child!),
         home: const AppGate(),
       ),
     );

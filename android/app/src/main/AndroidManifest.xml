@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- Fingerprint / face unlock for the app lock. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
 
     <!-- Primary M-Pesa capture. RECEIVE_SMS delivers each message as it lands;
          READ_SMS lets a sweep recover anything that arrived while the app had no

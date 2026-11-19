@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../database/database_helper.dart';
+import '../security/app_lock.dart';
+import '../security/pin_views.dart';
 import '../services/notification_service.dart';
 import '../state/category_store.dart';
 import '../theme/app_colors.dart';
@@ -34,6 +36,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
   bool? _ignoringBatteryOptimizations;
   bool? _smsCaptureEnabled;
   int _rulesVersion = 0;
+  bool _biometricsAvailable = false;
 
   @override
   void initState() {
@@ -42,6 +45,7 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     _loadUserName();
     _checkBatteryOptimizations();
     _checkSmsCapture();
+    _checkBiometrics();
   }
 
   @override
@@ -57,7 +61,163 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _checkBatteryOptimizations();
       _checkSmsCapture();
+      // A fingerprint may have been enrolled in system settings meanwhile.
+      _checkBiometrics();
     }
+  }
+
+  Future<void> _checkBiometrics() async {
+    final available = await AppLock.instance.biometricsAvailable();
+    if (mounted) setState(() => _biometricsAvailable = available);
+  }
+
+  void _snack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _toggleAppLock(bool on) async {
+    final lock = AppLock.instance;
+    if (on) {
+      final pin = await showCreatePin(context);
+      if (pin == null || !mounted) return;
+      await lock.enable(pin);
+      if (!mounted) return;
+      if (_biometricsAvailable) {
+        // Offer fingerprint straight away, the way most wallets do.
+        final useFingerprint = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Unlock with fingerprint?'),
+            content: const Text(
+              'Use your fingerprint to open the app. Your PIN still works too.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Not now'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Use fingerprint'),
+              ),
+            ],
+          ),
+        );
+        if (useFingerprint == true) await _toggleBiometric(true);
+      }
+      if (mounted) _snack('App lock is on.');
+    } else {
+      final ok = await showVerifyPin(context, title: 'Enter PIN to turn off lock');
+      if (!ok) return;
+      await lock.disable();
+      if (mounted) _snack('App lock is off.');
+    }
+  }
+
+  Future<void> _toggleBiometric(bool on) async {
+    final result = await AppLock.instance.setBiometricEnabled(on);
+    if (!mounted) return;
+    switch (result) {
+      case BiometricResult.success:
+        break;
+      case BiometricResult.unavailable:
+        _snack('No fingerprint is set up on this phone. Add one in system settings.');
+        break;
+      case BiometricResult.lockedOut:
+        _snack('Fingerprint is locked after too many tries. Try again later.');
+        break;
+      case BiometricResult.failed:
+        _snack("Fingerprint not confirmed, so it wasn't turned on.");
+        break;
+    }
+  }
+
+  Future<void> _changePin() async {
+    final ok = await showVerifyPin(context, title: 'Enter your current PIN');
+    if (!ok || !mounted) return;
+    final pin = await showCreatePin(context, title: 'Enter a new PIN');
+    if (pin == null) return;
+    await AppLock.instance.changePin(pin);
+    if (mounted) _snack('PIN changed.');
+  }
+
+  Widget _buildSecurityCard() {
+    return ListenableBuilder(
+      listenable: AppLock.instance,
+      builder: (context, _) {
+        final lock = AppLock.instance;
+        final switchTheme = SwitchThemeData(
+          thumbColor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.selected) ? AppColors.accent : null),
+          trackColor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.selected)
+                  ? AppColors.accent.withValues(alpha: 0.4)
+                  : null),
+        );
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: GlassPanel(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Theme(
+              data: Theme.of(context).copyWith(switchTheme: switchTheme),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Text(
+                      'Security',
+                      style: TextStyle(
+                        color: AppColors.primaryText,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.lock_outline, color: AppColors.accent),
+                    title: const Text('App lock',
+                        style: TextStyle(color: AppColors.primaryText)),
+                    subtitle: const Text(
+                      'Ask for a PIN every time the app is opened',
+                      style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+                    ),
+                    value: lock.isEnabled,
+                    onChanged: _toggleAppLock,
+                  ),
+                  if (lock.isEnabled) ...[
+                    SwitchListTile(
+                      secondary: const Icon(Icons.fingerprint, color: AppColors.accent),
+                      title: const Text('Unlock with fingerprint',
+                          style: TextStyle(color: AppColors.primaryText)),
+                      subtitle: Text(
+                        _biometricsAvailable
+                            ? 'Your PIN still works as a backup'
+                            : 'Set up a fingerprint in phone settings first',
+                        style: const TextStyle(
+                            color: AppColors.secondaryText, fontSize: 12),
+                      ),
+                      value: lock.isBiometricEnabled,
+                      onChanged: _biometricsAvailable || lock.isBiometricEnabled
+                          ? _toggleBiometric
+                          : null,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.pin_outlined, color: AppColors.accent),
+                      title: const Text('Change PIN',
+                          style: TextStyle(color: AppColors.primaryText)),
+                      trailing: const Icon(Icons.chevron_right,
+                          color: AppColors.secondaryText),
+                      onTap: _changePin,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _checkBatteryOptimizations() async {
@@ -496,6 +656,9 @@ class _ProfilePageState extends State<ProfilePage> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
+
+              // SECURITY — PIN and fingerprint lock
+              _buildSecurityCard(),
 
               // AUTO-CATEGORIZATION RULES
               //

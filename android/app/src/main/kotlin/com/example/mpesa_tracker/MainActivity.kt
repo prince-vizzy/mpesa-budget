@@ -1,9 +1,11 @@
 package com.example.mpesa_tracker
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 
-class MainActivity : FlutterActivity() {
+// FlutterFragmentActivity, not FlutterActivity: local_auth hosts the system
+// biometric prompt in a fragment, and fails without one.
+class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // Re-register every time so a new FlutterEngine gets a live event sink.

@@ -39,6 +39,8 @@ android {
 dependencies {
     // 🔴 REQUIRED
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    // Provides the Theme.AppCompat parent the launch theme needs for local_auth.
+    implementation("androidx.appcompat:appcompat:1.7.0")
 }
 
 flutter {
